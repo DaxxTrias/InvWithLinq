@@ -15,6 +15,7 @@ namespace InvWithLinq;
 public class InvWithLinq : BaseSettingsPlugin<InvWithLinqSettings>
 {
     private readonly TimeCache<List<CustomItemData>> _inventItems;
+    private readonly TimeCache<List<CustomItemData>> _stashItems;
     private List<ItemFilter> _itemFilters;
     private bool _isInTown = true;
 
@@ -22,6 +23,7 @@ public class InvWithLinq : BaseSettingsPlugin<InvWithLinqSettings>
     {
         Name = "Inv With Linq";
         _inventItems = new TimeCache<List<CustomItemData>>(GetInventoryItems, 200);
+        _stashItems = new TimeCache<List<CustomItemData>>(GetStashItems, 200);
     }
 
     public override bool Initialise()
@@ -57,7 +59,7 @@ public class InvWithLinq : BaseSettingsPlugin<InvWithLinqSettings>
         if (!_isInTown && !Settings.RunOutsideTown)
             return;
 
-        foreach (var item in GetFilteredItems())
+        foreach (var item in GetFilteredInvItems())
         {
             if (hoveredItem != null && hoveredItem.Tooltip.GetClientRectCache.Intersects(item.ClientRectangleCache) && hoveredItem.Entity.Address != item.Entity.Address)
             {
@@ -68,7 +70,19 @@ public class InvWithLinq : BaseSettingsPlugin<InvWithLinqSettings>
                 Graphics.DrawFrame(item.ClientRectangleCache, Settings.FrameColor, Settings.FrameThickness);
             }
         }
-        
+
+        foreach (var item in GetFilteredStashItems())
+        {
+            if (hoveredItem != null && hoveredItem.Tooltip.GetClientRectCache.Intersects(item.ClientRectangleCache) && hoveredItem.Entity.Address != item.Entity.Address)
+            {
+                Graphics.DrawFrame(item.ClientRectangleCache, Settings.FrameColor.Value.ToImguiVec4(45).ToColor(), Settings.FrameThickness);
+            }
+            else
+            {
+                Graphics.DrawFrame(item.ClientRectangleCache, Settings.FrameColor, Settings.FrameThickness);
+            }
+        }
+
         PerformItemFilterTest(hoveredItem);
     }
     
@@ -115,30 +129,16 @@ public class InvWithLinq : BaseSettingsPlugin<InvWithLinqSettings>
         Settings.InvRules = invRules;
     }
     
-
-    private List<CustomItemData> GetInventoryItems()
+    private List<CustomItemData> GetStashItems()
     {
         var items = new List<CustomItemData>();
 
-        if (!IsInventoryVisible()) 
+        if (!IsStashVisible())
             return items;
-
-        // Get inventory items
-        var inventory = GameController?.Game?.IngameState?.Data?.ServerData?.PlayerInventories[0]?.Inventory;
-        var inventoryItems = inventory?.InventorySlotItems;
-
-        if (inventoryItems != null)
-        {
-            foreach (var item in inventoryItems)
-            {
-                if (item.Item == null || item.Address == 0) continue;
-                items.Add(new CustomItemData(item.Item, GameController, item.GetClientRect()));
-            }
-        }
 
         // Verify stash is opened
         var stashElement = GameController?.Game?.IngameState?.IngameUi?.StashElement;
-        if (stashElement == null || !stashElement.IsVisible)
+        if (stashElement == null)
             return items;
 
         // Get the currently opened stash tab index
@@ -164,23 +164,55 @@ public class InvWithLinq : BaseSettingsPlugin<InvWithLinqSettings>
 
         return items;
     }
+
+    private List<CustomItemData> GetInventoryItems()
+    {
+        var inventoryItems = new List<CustomItemData>();
+
+        if (!IsInventoryVisible()) return inventoryItems;
+
+        var inventory = GameController?.Game?.IngameState?.Data?.ServerData?.PlayerInventories[0]?.Inventory;
+        var items = inventory?.InventorySlotItems;
+
+        if (items == null) return inventoryItems;
+
+        foreach (var item in items)
+        {
+            if (item.Item == null || item.Address == 0) continue;
+
+            inventoryItems.Add(new CustomItemData(item.Item, GameController, item.GetClientRect()));
+        }
+
+        return inventoryItems;
+    }
+
     private Element GetHoveredItem()
     {
         return GameController?.IngameState?.UIHover?.Address != 0 && GameController.IngameState.UIHover.Entity.IsValid
             ? GameController.IngameState.UIHover
             : null;
     }
-    
+
+    private bool IsStashVisible()
+    {
+        return GameController.IngameState.IngameUi.StashElement.IsVisible;
+    }
+
     private bool IsInventoryVisible()
     {
         return GameController.IngameState.IngameUi.InventoryPanel.IsVisible;
     }
     
-    private IEnumerable<CustomItemData> GetFilteredItems()
+    private IEnumerable<CustomItemData> GetFilteredInvItems()
     {
         return _inventItems.Value.Where(x => _itemFilters.Any(y => y.Matches(x)));
     }
-    
+
+    private IEnumerable<CustomItemData> GetFilteredStashItems()
+    {
+        return _stashItems.Value.Where(x => _itemFilters.Any(y => y.Matches(x)));
+    }
+
     private void PerformItemFilterTest(Element hoveredItem)
     {
         if (Settings.FilterTest.Value is { Length: > 0 } && hoveredItem != null)
