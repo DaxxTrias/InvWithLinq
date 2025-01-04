@@ -71,18 +71,18 @@ public class InvWithLinq : BaseSettingsPlugin<InvWithLinqSettings>
             }
         }
 
-        if (!IsStashVisible())
+        if (!IsStashVisible() || !Settings.EnableForStash)
             return;
 
-        foreach (var item in GetFilteredStashItems())
+        foreach (var stashItem in GetFilteredStashItems())
         {
-            if (hoveredItem != null && hoveredItem.Tooltip.GetClientRectCache.Intersects(item.ClientRectangleCache) && hoveredItem.Entity.Address != item.Entity.Address)
+            if (hoveredItem != null && hoveredItem.Tooltip.GetClientRectCache.Intersects(stashItem.ClientRectangleCache) && hoveredItem.Entity.Address != stashItem.Entity.Address)
             {
-                Graphics.DrawFrame(item.ClientRectangleCache, Settings.FrameColor.Value.ToImguiVec4(45).ToColor(), Settings.FrameThickness);
+                Graphics.DrawFrame(stashItem.ClientRectangleCache, Settings.FrameColor.Value.ToImguiVec4(45).ToColor(), Settings.FrameThickness);
             }
             else
             {
-                Graphics.DrawFrame(item.ClientRectangleCache, Settings.FrameColor, Settings.FrameThickness);
+                Graphics.DrawFrame(stashItem.ClientRectangleCache, Settings.FrameColor, Settings.FrameThickness);
             }
         }
 
@@ -139,32 +139,31 @@ public class InvWithLinq : BaseSettingsPlugin<InvWithLinqSettings>
         if (!IsStashVisible())
             return items;
 
-        // Verify stash is opened
+        // Check if stash is visible in the UI
         var stashElement = GameController?.Game?.IngameState?.IngameUi?.StashElement;
-        if (stashElement == null)
-            return items;
 
-        // Get the currently opened stash tab index
-        int openTabIndex = stashElement.IndexVisibleStash;
-
-        // Get the actual stash tab element
-        var visibleTabElement = stashElement.GetStashInventoryByIndex(openTabIndex);
-        if (visibleTabElement == null)
-            return items;
-
-        // Retrieve items from that tab
-        var stashItems = visibleTabElement.ServerInventory?.InventorySlotItems;
-        if (stashItems != null)
+        // We only proceed if either stash or guild stash is open/visible
+        if (stashElement != null && stashElement.IsVisible)
         {
-            foreach (var slot in stashItems)
-            {
-                if (slot?.Item == null || slot.Address == 0)
-                    continue;
+            // This is the "currently visible" stash:
+            var visibleStash = stashElement.VisibleStash;
+            // The bounding rectangle for the stash UI panel
+            var stashRect = visibleStash?.InventoryUIElement?.GetClientRectCache;
 
-                items.Add(new CustomItemData(slot.Item, GameController, slot.GetClientRect()));
+            // Now get the stash items from that visible stash
+            var stashItems = visibleStash?.VisibleInventoryItems;
+            if (stashItems != null)
+            {
+                foreach (var slotItem in stashItems)
+                {
+                    if (slotItem == null || slotItem.Address == 0 || slotItem.Item == null)
+                        continue;
+
+                    var rect = slotItem.GetClientRectCache;
+                    items.Add(new CustomItemData(slotItem.Item, GameController, rect));
+                }
             }
         }
-
         return items;
     }
 
