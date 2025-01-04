@@ -118,25 +118,52 @@ public class InvWithLinq : BaseSettingsPlugin<InvWithLinqSettings>
 
     private List<CustomItemData> GetInventoryItems()
     {
-        var inventoryItems = new List<CustomItemData>();
-        
-        if (!IsInventoryVisible()) return inventoryItems;
-        
-        var inventory = GameController?.Game?.IngameState?.Data?.ServerData?.PlayerInventories[0]?.Inventory;
-        var items = inventory?.InventorySlotItems;
-        
-        if (items == null) return inventoryItems;
+        var items = new List<CustomItemData>();
 
-        foreach (var item in items)
+        if (!IsInventoryVisible()) 
+            return items;
+
+        // Get inventory items
+        var inventory = GameController?.Game?.IngameState?.Data?.ServerData?.PlayerInventories[0]?.Inventory;
+        var inventoryItems = inventory?.InventorySlotItems;
+
+        if (inventoryItems != null)
         {
-            if (item.Item == null || item.Address == 0) continue;
-            
-            inventoryItems.Add(new CustomItemData(item.Item, GameController, item.GetClientRect()));
+            foreach (var item in inventoryItems)
+            {
+                if (item.Item == null || item.Address == 0) continue;
+                items.Add(new CustomItemData(item.Item, GameController, item.GetClientRect()));
+            }
         }
 
-        return inventoryItems;
+        // Verify stash is opened
+        var stashElement = GameController?.Game?.IngameState?.IngameUi?.StashElement;
+        if (stashElement == null || !stashElement.IsVisible)
+            return items;
+
+        // Get the currently opened stash tab index
+        int openTabIndex = stashElement.IndexVisibleStash;
+
+        // Get the actual stash tab element
+        var visibleTabElement = stashElement.GetStashInventoryByIndex(openTabIndex);
+        if (visibleTabElement == null)
+            return items;
+
+        // 4) Retrieve items from that tab
+        var stashItems = visibleTabElement.ServerInventory?.InventorySlotItems;
+        if (stashItems != null)
+        {
+            foreach (var slot in stashItems)
+            {
+                if (slot?.Item == null || slot.Address == 0)
+                    continue;
+
+                items.Add(new CustomItemData(slot.Item, GameController, slot.GetClientRect()));
+            }
+        }
+
+        return items;
     }
-    
     private Element GetHoveredItem()
     {
         return GameController?.IngameState?.UIHover?.Address != 0 && GameController.IngameState.UIHover.Entity.IsValid
