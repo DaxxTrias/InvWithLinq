@@ -71,6 +71,9 @@ public class InvWithLinq : BaseSettingsPlugin<InvWithLinqSettings>
             }
         }
 
+        if (!IsStashVisible())
+            return;
+
         foreach (var item in GetFilteredStashItems())
         {
             if (hoveredItem != null && hoveredItem.Tooltip.GetClientRectCache.Intersects(item.ClientRectangleCache) && hoveredItem.Entity.Address != item.Entity.Address)
@@ -149,7 +152,7 @@ public class InvWithLinq : BaseSettingsPlugin<InvWithLinqSettings>
         if (visibleTabElement == null)
             return items;
 
-        // 4) Retrieve items from that tab
+        // Retrieve items from that tab
         var stashItems = visibleTabElement.ServerInventory?.InventorySlotItems;
         if (stashItems != null)
         {
@@ -169,16 +172,19 @@ public class InvWithLinq : BaseSettingsPlugin<InvWithLinqSettings>
     {
         var inventoryItems = new List<CustomItemData>();
 
-        if (!IsInventoryVisible()) return inventoryItems;
+        if (!IsInventoryVisible()) 
+            return inventoryItems;
 
         var inventory = GameController?.Game?.IngameState?.Data?.ServerData?.PlayerInventories[0]?.Inventory;
         var items = inventory?.InventorySlotItems;
 
-        if (items == null) return inventoryItems;
+        if (items == null) 
+            return inventoryItems;
 
         foreach (var item in items)
         {
-            if (item.Item == null || item.Address == 0) continue;
+            if (item.Item == null || item.Address == 0) 
+                continue;
 
             inventoryItems.Add(new CustomItemData(item.Item, GameController, item.GetClientRect()));
         }
