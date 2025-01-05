@@ -93,7 +93,7 @@ public class InvWithLinq : BaseSettingsPlugin<InvWithLinqSettings>
     {
         base.DrawSettings();
 
-        if (ImGui.Button("Open Build Folder"))
+        if (ImGui.Button("Open rule folder"))
         {
             var configDirectory = ConfigDirectory;
             var customConfigDirectory = !string.IsNullOrEmpty(Settings.CustomConfigDirectory)
