@@ -213,6 +213,11 @@ public class InvWithLinq : BaseSettingsPlugin<InvWithLinqSettings>
         return _inventItems.Value.Where(x => _itemFilters.Any(y => y.Matches(x)));
     }
 
+    internal void ReloadRules()
+    {
+        LoadRules();
+    }
+
     private IEnumerable<CustomItemData> GetFilteredStashItems()
     {
         return _stashItems.Value.Where(x => _itemFilters.Any(y => y.Matches(x)));
