@@ -13,6 +13,18 @@ public class CustomItemData : ItemData
     {
         ClientRectangleCache = getClientRectCache;
     }
+    public CustomItemData(Entity queriedItem, GameController gc, EKind kind, RectangleF getClientRectCache) : base(queriedItem, gc)
+    {
+        Kind = kind;
+        ClientRectangleCache = getClientRectCache;
+    }
 
     public RectangleF ClientRectangleCache { get; set; }
+    public EKind Kind { get; }
+}
+public enum EKind
+{
+    QuestReward,
+    Shop,
+    RitualReward
 }

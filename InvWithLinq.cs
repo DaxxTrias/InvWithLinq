@@ -1,12 +1,14 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Drawing;
 using System.IO;
 using System.Linq;
 using ExileCore2;
 using ExileCore2.PoEMemory;
 using ExileCore2.Shared.Cache;
 using ExileCore2.Shared.Helpers;
+using ExileCore2.Shared.Nodes;
 using ImGuiNET;
 using ItemFilterLibrary;
 
@@ -45,11 +47,6 @@ public class InvWithLinq : BaseSettingsPlugin<InvWithLinqSettings>
         }
     }
 
-    public override void Tick()
-    {
-        
-    }
-
     public override void Render()
     {
         var hoveredItem = GetHoveredItem();
@@ -61,13 +58,14 @@ public class InvWithLinq : BaseSettingsPlugin<InvWithLinqSettings>
 
         foreach (var item in GetFilteredInvItems())
         {
+            var frameColor = GetFilterColor(item);
             if (hoveredItem != null && hoveredItem.Tooltip.GetClientRectCache.Intersects(item.ClientRectangleCache) && hoveredItem.Entity.Address != item.Entity.Address)
             {
-                Graphics.DrawFrame(item.ClientRectangleCache, Settings.FrameColor.Value.ToImguiVec4(45).ToColor(), Settings.FrameThickness);
+                Graphics.DrawFrame(item.ClientRectangleCache, frameColor.Value.ToImguiVec4(45).ToColor(), Settings.FrameThickness);
             }
             else
             {
-                Graphics.DrawFrame(item.ClientRectangleCache, Settings.FrameColor, Settings.FrameThickness);
+                Graphics.DrawFrame(item.ClientRectangleCache, frameColor, Settings.FrameThickness);
             }
         }
 
@@ -76,60 +74,18 @@ public class InvWithLinq : BaseSettingsPlugin<InvWithLinqSettings>
 
         foreach (var stashItem in GetFilteredStashItems())
         {
+            var frameColor = GetFilterColor(stashItem);
             if (hoveredItem != null && hoveredItem.Tooltip.GetClientRectCache.Intersects(stashItem.ClientRectangleCache) && hoveredItem.Entity.Address != stashItem.Entity.Address)
             {
-                Graphics.DrawFrame(stashItem.ClientRectangleCache, Settings.FrameColor.Value.ToImguiVec4(45).ToColor(), Settings.FrameThickness);
+                Graphics.DrawFrame(stashItem.ClientRectangleCache, frameColor.Value.ToImguiVec4(45).ToColor(), Settings.FrameThickness);
             }
             else
             {
-                Graphics.DrawFrame(stashItem.ClientRectangleCache, Settings.FrameColor, Settings.FrameThickness);
+                Graphics.DrawFrame(stashItem.ClientRectangleCache, frameColor, Settings.FrameThickness);
             }
         }
 
         PerformItemFilterTest(hoveredItem);
-    }
-    
-    public override void DrawSettings()
-    {
-        base.DrawSettings();
-
-        if (ImGui.Button("Open rule folder"))
-        {
-            var configDirectory = ConfigDirectory;
-            var customConfigDirectory = !string.IsNullOrEmpty(Settings.CustomConfigDirectory)
-                ? Path.Combine(Path.GetDirectoryName(ConfigDirectory)!, Settings.CustomConfigDirectory)
-                : null;
-            
-            var directoryToOpen = Directory.Exists(customConfigDirectory)
-                ? customConfigDirectory
-                : configDirectory;
-
-            Process.Start("explorer.exe", directoryToOpen);
-        }
-
-        ImGui.Separator();
-        ImGui.BulletText("Select Rules To Load");
-
-        var invRules = new List<InvRule>(Settings.InvRules);
-
-        for (int i = 0; i < invRules.Count; i++)
-        {
-            if (ImGui.ArrowButton($"##UpButton{i}", ImGuiDir.Up) && i > 0)
-                (invRules[i - 1], invRules[i]) = (invRules[i], invRules[i - 1]);
-
-            ImGui.SameLine(); ImGui.Text(" "); ImGui.SameLine();
-
-            if (ImGui.ArrowButton($"##DownButton{i}", ImGuiDir.Down) && i < invRules.Count - 1)
-                (invRules[i + 1], invRules[i]) = (invRules[i], invRules[i + 1]);
-
-            ImGui.SameLine(); ImGui.Text(" - "); ImGui.SameLine();
-
-            var refToggle = invRules[i].Enabled;
-            if (ImGui.Checkbox($"{invRules[i].Name}##Checkbox{i}", ref refToggle))
-                invRules[i].Enabled = refToggle;
-        }
-
-        Settings.InvRules = invRules;
     }
     
     private List<CustomItemData> GetStashItems()
@@ -237,6 +193,7 @@ public class InvWithLinq : BaseSettingsPlugin<InvWithLinqSettings>
     {
         string configDirectory = ConfigDirectory;
         List<InvRule> existingRules = Settings.InvRules;
+        var existingColors = Settings.FilterColors;
 
         if (!string.IsNullOrEmpty(Settings.CustomConfigDirectory))
         {
@@ -278,10 +235,41 @@ public class InvWithLinq : BaseSettingsPlugin<InvWithLinqSettings>
                 .ToList();
 
             Settings.InvRules = newRules;
+
+            // Initialize FilterColors for each filter
+            Settings.FilterColors = new List<ColorNode>();
+            for (int i = 0; i < newRules.Count; i++)
+            {
+                if (i < existingColors.Count)
+                {
+                    Settings.FilterColors.Add(existingColors[i]);
+                }
+                else
+                {
+                    Settings.FilterColors.Add(new ColorNode(Color.Red));
+                }
+            }
         }
         catch (Exception e)
         {
             DebugWindow.LogError($"{Name}: Filter Load Error.\n{e}", 15);
         }
+    }
+
+    private bool ItemInFilter(CustomItemData item)
+    {
+        return _itemFilters?.Any(filter => filter.Matches(item)) ?? false;
+    }
+
+    private ColorNode GetFilterColor(CustomItemData item)
+    {
+        for (int i = 0; i < _itemFilters.Count; i++)
+        {
+            if (_itemFilters[i].Matches(item))
+            {
+                return Settings.FilterColors[i];
+            }
+        }
+        return Settings.DefaultFrameColor;
     }
 }
