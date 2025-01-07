@@ -1,0 +1,31 @@
+// Generic Things
+
+// SocketInfo.SocketNumber > 1
+
+ItemStats[GameStat.AllSkillGemLevel]>=1
+
+ItemStats[GameStat.LocalCharmSlots]>=1
+
+ItemStats[GameStat.BaseItemFoundRarityPct]>=15
+
+ItemStats[GameStat.BaseMovementVelocityPct]>=20
+
+ItemStats[GameStat.BaseMaximumLife]>=80
+
+ItemStats[GameStat.BaseResistAllElementsPct]>=15
+
+ItemStats[GameStat.BaseFireDamageResistancePct]>=30
+
+ItemStats[GameStat.BaseColdDamageResistancePct]>=30
+
+ItemStats[GameStat.BaseLightningDamageResistancePct]>=30
+
+ItemStats[GameStat.BaseChaosDamageResistancePct]>=5
+
+ItemStats[GameStat.ChaosDamageResistancePct]>=5
+
+ItemStats[GameStat.LocalFlaskUseOnChaosDamageTaken]>=1 // chaos charm
+
+ItemStats[GameStat.LocalFlaskUseOnAffectedByPoison]>=1 // poison charm
+
+ItemStats[GameStat.LocalItemAdditionalSkillSlots]>=1
