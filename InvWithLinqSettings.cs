@@ -16,14 +16,12 @@ public class InvWithLinqSettings : ISettings
     public InvWithLinqSettings()
     {
         RuleConfig = new RuleRenderer(this);
-        FilterColors = new List<ColorNode>();
     }
     public ToggleNode RunOutsideTown { get; set; } = new ToggleNode(true);
     public ToggleNode EnableForStash { get; set; } = new ToggleNode(true);
     public ToggleNode Enable { get; set; } = new ToggleNode(false);
     public ColorNode DefaultFrameColor { get; set; } = new ColorNode(Color.Red);
     public RangeNode<int> FrameThickness { get; set; } = new RangeNode<int>(1, 1, 20);
-    public List<ColorNode> FilterColors { get; set; }
 
     [JsonIgnore]
     public TextNode FilterTest { get; set; } = new TextNode();
@@ -95,9 +93,9 @@ public class InvWithLinqSettings : ISettings
                 }
 
                 ImGui.SameLine();
-                var color = new Vector4(_parent.FilterColors[i].Value.R / 255.0f, _parent.FilterColors[i].Value.G / 255.0f, _parent.FilterColors[i].Value.B / 255.0f, _parent.FilterColors[i].Value.A / 255.0f);
+                var color = new Vector4(tempNpcInvRules[i].Color.Value.R / 255.0f, tempNpcInvRules[i].Color.Value.G / 255.0f, tempNpcInvRules[i].Color.Value.B / 255.0f, tempNpcInvRules[i].Color.Value.A / 255.0f);
                 if (ImGui.ColorEdit4($"##colorPicker{i}", ref color))
-                    _parent.FilterColors[i].Value = Color.FromArgb((int)(color.W * 255), (int)(color.X * 255), (int)(color.Y * 255), (int)(color.Z * 255));
+                    tempNpcInvRules[i].Color.Value = Color.FromArgb((int)(color.W * 255), (int)(color.X * 255), (int)(color.Y * 255), (int)(color.Z * 255));
             }
 
             _parent.InvRules = tempNpcInvRules;
@@ -110,6 +108,7 @@ public class InvRule
     public string Name { get; set; } = "";
     public string Location { get; set; } = "";
     public bool Enabled { get; set; } = false;
+    public ColorNode Color { get; set; } = new ColorNode(System.Drawing.Color.Red);
 
     public InvRule(string name, string location, bool enabled)
     {

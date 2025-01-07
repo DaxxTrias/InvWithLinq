@@ -193,7 +193,6 @@ public class InvWithLinq : BaseSettingsPlugin<InvWithLinqSettings>
     {
         string configDirectory = ConfigDirectory;
         List<InvRule> existingRules = Settings.InvRules;
-        var existingColors = Settings.FilterColors;
 
         if (!string.IsNullOrEmpty(Settings.CustomConfigDirectory))
         {
@@ -235,30 +234,11 @@ public class InvWithLinq : BaseSettingsPlugin<InvWithLinqSettings>
                 .ToList();
 
             Settings.InvRules = newRules;
-
-            // Initialize FilterColors for each filter
-            Settings.FilterColors = new List<ColorNode>();
-            for (int i = 0; i < newRules.Count; i++)
-            {
-                if (i < existingColors.Count)
-                {
-                    Settings.FilterColors.Add(existingColors[i]);
-                }
-                else
-                {
-                    Settings.FilterColors.Add(new ColorNode(Color.Red));
-                }
-            }
         }
         catch (Exception e)
         {
             DebugWindow.LogError($"{Name}: Filter Load Error.\n{e}", 15);
         }
-    }
-
-    private bool ItemInFilter(CustomItemData item)
-    {
-        return _itemFilters?.Any(filter => filter.Matches(item)) ?? false;
     }
 
     private ColorNode GetFilterColor(CustomItemData item)
@@ -267,7 +247,7 @@ public class InvWithLinq : BaseSettingsPlugin<InvWithLinqSettings>
         {
             if (_itemFilters[i].Matches(item))
             {
-                return Settings.FilterColors[i];
+                return Settings.InvRules[i].Color;
             }
         }
         return Settings.DefaultFrameColor;
