@@ -166,7 +166,7 @@ public class InvWithLinq : BaseSettingsPlugin<InvWithLinqSettings>
     
     private IEnumerable<CustomItemData> GetFilteredInvItems()
     {
-        return _inventItems.Value.Where(x => _itemFilters.Any(y => y.Matches(x)));
+        return _inventItems.Value.Where(x => _itemFilters.Any(y => y.Matches(x) && Settings.InvRules[_itemFilters.IndexOf(y)].Enabled));
     }
 
     internal void ReloadRules()
@@ -176,7 +176,7 @@ public class InvWithLinq : BaseSettingsPlugin<InvWithLinqSettings>
 
     private IEnumerable<CustomItemData> GetFilteredStashItems()
     {
-        return _stashItems.Value.Where(x => _itemFilters.Any(y => y.Matches(x)));
+        return _stashItems.Value.Where(x => _itemFilters.Any(y => y.Matches(x) && Settings.InvRules[_itemFilters.IndexOf(y)].Enabled));
     }
 
     private void PerformItemFilterTest(Element hoveredItem)
@@ -245,7 +245,7 @@ public class InvWithLinq : BaseSettingsPlugin<InvWithLinqSettings>
     {
         for (int i = 0; i < _itemFilters.Count; i++)
         {
-            if (_itemFilters[i].Matches(item))
+            if (Settings.InvRules[i].Enabled && _itemFilters[i].Matches(item))
             {
                 return Settings.InvRules[i].Color;
             }
