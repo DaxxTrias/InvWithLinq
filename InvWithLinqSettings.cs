@@ -13,10 +13,13 @@ namespace InvWithLinq;
 
 public class InvWithLinqSettings : ISettings
 {
+    private bool _reloadRequired = false;
+
     public InvWithLinqSettings()
     {
         RuleConfig = new RuleRenderer(this);
     }
+
     public ToggleNode RunOutsideTown { get; set; } = new ToggleNode(true);
     public ToggleNode EnableForStash { get; set; } = new ToggleNode(true);
     public ToggleNode Enable { get; set; } = new ToggleNode(false);
@@ -72,14 +75,20 @@ public class InvWithLinqSettings : ISettings
             for (int i = 0; i < tempNpcInvRules.Count; i++)
             {
                 if (ImGui.ArrowButton($"##upButton{i}", ImGuiDir.Up) && i > 0)
+                {
                     (tempNpcInvRules[i - 1], tempNpcInvRules[i]) = (tempNpcInvRules[i], tempNpcInvRules[i - 1]);
+                    _parent._reloadRequired = true;
+                }
 
                 ImGui.SameLine();
                 ImGui.Text(" ");
                 ImGui.SameLine();
 
                 if (ImGui.ArrowButton($"##downButton{i}", ImGuiDir.Down) && i < tempNpcInvRules.Count - 1)
+                {
                     (tempNpcInvRules[i + 1], tempNpcInvRules[i]) = (tempNpcInvRules[i], tempNpcInvRules[i + 1]);
+                    _parent._reloadRequired = true;
+                }
 
                 ImGui.SameLine();
                 ImGui.Text(" - ");
@@ -99,6 +108,12 @@ public class InvWithLinqSettings : ISettings
             }
 
             _parent.InvRules = tempNpcInvRules;
+
+            if (_parent._reloadRequired)
+            {
+                plugin.ReloadRules();
+                _parent._reloadRequired = false;
+            }
         }
     }
 }
