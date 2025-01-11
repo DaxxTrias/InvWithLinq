@@ -20,6 +20,7 @@ public class InvWithLinq : BaseSettingsPlugin<InvWithLinqSettings>
     private readonly TimeCache<List<CustomItemData>> _stashItems;
     private List<ItemFilter> _itemFilters;
     private bool _isInTown = true;
+    private readonly List<string> ItemDebug = new List<string>();
 
     public InvWithLinq()
     {
@@ -55,6 +56,17 @@ public class InvWithLinq : BaseSettingsPlugin<InvWithLinqSettings>
         
         if (!_isInTown && !Settings.RunOutsideTown)
             return;
+
+        if (ImGui.Button("Dump Items"))
+        {
+            Directory.CreateDirectory(Path.Combine(DirectoryFullName, "Dumps"));
+            var path = Path.Combine(DirectoryFullName, "Dumps",
+                $"{GameController.Area.CurrentArea.Name}.txt");
+
+            DebugWindow.LogMsg(path);
+
+            File.WriteAllLines(path, ItemDebug);
+        }
 
         foreach (var item in GetFilteredInvItems())
         {
