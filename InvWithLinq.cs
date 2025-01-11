@@ -6,6 +6,7 @@ using System.IO;
 using System.Linq;
 using ExileCore2;
 using ExileCore2.PoEMemory;
+using ExileCore2.PoEMemory.Components;
 using ExileCore2.Shared.Cache;
 using ExileCore2.Shared.Helpers;
 using ExileCore2.Shared.Nodes;
@@ -59,6 +60,13 @@ public class InvWithLinq : BaseSettingsPlugin<InvWithLinqSettings>
 
         if (ImGui.Button("Dump Items"))
         {
+            ItemDebug.Clear();
+            foreach (var item in GetInventoryItems())
+            {
+                var affixes = GetItemAffixes(item);
+                ItemDebug.AddRange(affixes);
+            }
+
             Directory.CreateDirectory(Path.Combine(DirectoryFullName, "Dumps"));
             var path = Path.Combine(DirectoryFullName, "Dumps",
                 $"{GameController.Area.CurrentArea.Name}.txt");
@@ -157,6 +165,17 @@ public class InvWithLinq : BaseSettingsPlugin<InvWithLinqSettings>
         }
 
         return inventoryItems;
+    }
+
+    private List<string> GetItemAffixes(CustomItemData item)
+    {
+        var affixes = new List<string>();
+        var mods = item.Entity?.GetComponent<Mods>();
+        if (mods != null)
+        {
+            affixes.AddRange(mods.ItemMods.Select(mod => mod.RawName));
+        }
+        return affixes;
     }
 
     private Element GetHoveredItem()
