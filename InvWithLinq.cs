@@ -33,8 +33,27 @@ public class InvWithLinq : BaseSettingsPlugin<InvWithLinqSettings>
     public override bool Initialise()
     {
         Settings.ReloadFilters.OnPressed = LoadRules;
+        Settings.DumpItems.OnPressed = DumpItems;
         LoadRules();
         return true;
+    }
+
+    private void DumpItems()
+    {
+        ItemDebug.Clear();
+        foreach (var item in GetInventoryItems())
+        {
+            var affixes = GetItemAffixes(item);
+            ItemDebug.AddRange(affixes);
+        }
+
+        Directory.CreateDirectory(Path.Combine(DirectoryFullName, "Dumps"));
+        var path = Path.Combine(DirectoryFullName, "Dumps",
+            $"{GameController.Area.CurrentArea.Name}.txt");
+
+        File.WriteAllLines(path, ItemDebug);
+
+        LogMessage("Items in inventory dumped to " + path);
     }
 
     public override void AreaChange(AreaInstance area)
@@ -52,29 +71,9 @@ public class InvWithLinq : BaseSettingsPlugin<InvWithLinqSettings>
     public override void Render()
     {
         var hoveredItem = GetHoveredItem();
+
         if (!IsInventoryVisible())
             return;
-        
-        if (!_isInTown && !Settings.RunOutsideTown)
-            return;
-
-        if (ImGui.Button("Dump Items"))
-        {
-            ItemDebug.Clear();
-            foreach (var item in GetInventoryItems())
-            {
-                var affixes = GetItemAffixes(item);
-                ItemDebug.AddRange(affixes);
-            }
-
-            Directory.CreateDirectory(Path.Combine(DirectoryFullName, "Dumps"));
-            var path = Path.Combine(DirectoryFullName, "Dumps",
-                $"{GameController.Area.CurrentArea.Name}.txt");
-
-            DebugWindow.LogMsg(path);
-
-            File.WriteAllLines(path, ItemDebug);
-        }
 
         foreach (var item in GetFilteredInvItems())
         {

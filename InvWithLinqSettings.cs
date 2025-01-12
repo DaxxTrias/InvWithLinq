@@ -33,7 +33,7 @@ public class InvWithLinqSettings : ISettings
     public ButtonNode ReloadFilters { get; set; } = new ButtonNode();
 
     [JsonIgnore]
-    public ButtonNode DumpItems { get; set; } = new ButtonNode();
+    public ButtonNode DumpInventoryItems { get; set; } = new ButtonNode();
 
     [Menu("Use a Custom \"\\config\\custom_folder\" Folder")]
     public TextNode CustomConfigDirectory { get; set; } = new TextNode();
