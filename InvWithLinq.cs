@@ -33,7 +33,7 @@ public class InvWithLinq : BaseSettingsPlugin<InvWithLinqSettings>
     public override bool Initialise()
     {
         Settings.ReloadFilters.OnPressed = LoadRules;
-        Settings.DumpItems.OnPressed = DumpItems;
+        Settings.DumpInventoryItems.OnPressed = DumpItems;
         LoadRules();
         return true;
     }
@@ -170,9 +170,17 @@ public class InvWithLinq : BaseSettingsPlugin<InvWithLinqSettings>
     {
         var affixes = new List<string>();
         var mods = item.Entity?.GetComponent<Mods>();
+
         if (mods != null)
         {
-            affixes.AddRange(mods.ItemMods.Select(mod => mod.RawName));
+            affixes.Add(item.Entity.GetComponent<Base>().Name + " - " + item.Name);
+            foreach (var mod in mods.ExplicitMods)
+            {
+                foreach (var stat in mod.ModRecord.StatNames)
+                {
+                    affixes.Add($"  - {stat.MatchingStat}");
+                }
+            }
         }
         return affixes;
     }
