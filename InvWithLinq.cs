@@ -122,8 +122,6 @@ public class InvWithLinq : BaseSettingsPlugin<InvWithLinqSettings>
         {
             // This is the "currently visible" stash:
             var visibleStash = stashElement.VisibleStash;
-            // The bounding rectangle for the stash UI panel
-            var stashRect = visibleStash?.InventoryUIElement?.GetClientRectCache;
 
             // Now get the stash items from that visible stash
             var stashItems = visibleStash?.VisibleInventoryItems;
