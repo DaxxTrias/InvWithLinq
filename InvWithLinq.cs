@@ -288,4 +288,9 @@ public class InvWithLinq : BaseSettingsPlugin<InvWithLinqSettings>
         }
         return Settings.DefaultFrameColor;
     }
+
+    //private int SumItemStats(params int[] itemStats)
+    //{
+    //    return itemStats.Sum();
+    //}
 }
