@@ -158,6 +158,10 @@ public class InvWithLinq : BaseSettingsPlugin<InvWithLinqSettings>
             if (item.Item == null || item.Address == 0) 
                 continue;
 
+            var modsComp = item.Item.GetComponent<Mods>();
+            if (modsComp?.ExplicitMods == null || modsComp.ExplicitMods.Count == 0 || modsComp.ExplicitMods.Any(m => m?.ModRecord == null))
+                continue;
+
             inventoryItems.Add(new CustomItemData(item.Item, GameController, item.GetClientRect()));
         }
 
