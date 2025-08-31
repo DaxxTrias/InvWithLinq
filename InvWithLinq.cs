@@ -227,14 +227,8 @@ public class InvWithLinq : BaseSettingsPlugin<InvWithLinqSettings>
         if (_itemFilters == null || _itemFilters.Count == 0 || Settings?.InvRules == null)
             return Array.Empty<CustomItemData>();
         return _inventItems.Value.Where(x =>
-        {
-            for (int i = 0; i < _itemFilters.Count && i < Settings.InvRules.Count; i++)
-            {
-                if (Settings.InvRules[i].Enabled && _itemFilters[i].Matches(x))
-                    return true;
-            }
-            return false;
-        });
+            _itemFilters.Any(y => y.Matches(x) && (Settings.InvRules.ElementAtOrDefault(_itemFilters.IndexOf(y))?.Enabled == true))
+        );
     }
 
     internal void ReloadRules()
@@ -247,14 +241,8 @@ public class InvWithLinq : BaseSettingsPlugin<InvWithLinqSettings>
         if (_itemFilters == null || _itemFilters.Count == 0 || Settings?.InvRules == null)
             return Array.Empty<CustomItemData>();
         return _stashItems.Value.Where(x =>
-        {
-            for (int i = 0; i < _itemFilters.Count && i < Settings.InvRules.Count; i++)
-            {
-                if (Settings.InvRules[i].Enabled && _itemFilters[i].Matches(x))
-                    return true;
-            }
-            return false;
-        });
+            _itemFilters.Any(y => y.Matches(x) && (Settings.InvRules.ElementAtOrDefault(_itemFilters.IndexOf(y))?.Enabled == true))
+        );
     }
 
     private void PerformItemFilterTest(Element hoveredItem)
