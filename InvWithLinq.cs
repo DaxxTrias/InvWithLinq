@@ -78,7 +78,10 @@ public class InvWithLinq : BaseSettingsPlugin<InvWithLinqSettings>
         foreach (var item in GetFilteredInvItems())
         {
             var frameColor = GetFilterColor(item);
-            if (hoveredItem != null && hoveredItem.Tooltip.GetClientRectCache.Intersects(item.ClientRectangleCache) && hoveredItem.Entity.Address != item.Entity.Address)
+            var hoverIntersects = hoveredItem != null && hoveredItem.Tooltip != null && item?.Entity != null && hoveredItem.Entity != null &&
+                                  hoveredItem.Tooltip.GetClientRectCache.Intersects(item.ClientRectangleCache) &&
+                                  hoveredItem.Entity.Address != item.Entity.Address;
+            if (hoverIntersects)
             {
                 Graphics.DrawFrame(item.ClientRectangleCache, frameColor.Value.ToImguiVec4(45).ToColor(), Settings.FrameThickness);
             }
@@ -94,7 +97,10 @@ public class InvWithLinq : BaseSettingsPlugin<InvWithLinqSettings>
         foreach (var stashItem in GetFilteredStashItems())
         {
             var frameColor = GetFilterColor(stashItem);
-            if (hoveredItem != null && hoveredItem.Tooltip.GetClientRectCache.Intersects(stashItem.ClientRectangleCache) && hoveredItem.Entity.Address != stashItem.Entity.Address)
+            var hoverIntersects = hoveredItem != null && hoveredItem.Tooltip != null && stashItem?.Entity != null && hoveredItem.Entity != null &&
+                                  hoveredItem.Tooltip.GetClientRectCache.Intersects(stashItem.ClientRectangleCache) &&
+                                  hoveredItem.Entity.Address != stashItem.Entity.Address;
+            if (hoverIntersects)
             {
                 Graphics.DrawFrame(stashItem.ClientRectangleCache, frameColor.Value.ToImguiVec4(45).ToColor(), Settings.FrameThickness);
             }
@@ -147,7 +153,7 @@ public class InvWithLinq : BaseSettingsPlugin<InvWithLinqSettings>
         if (!IsInventoryVisible()) 
             return inventoryItems;
 
-        var inventory = GameController?.Game?.IngameState?.Data?.ServerData?.PlayerInventories[0]?.Inventory;
+        var inventory = GameController?.Game?.IngameState?.Data?.ServerData?.PlayerInventories?[0]?.Inventory;
         var items = inventory?.InventorySlotItems;
 
         if (items == null) 
@@ -155,12 +161,22 @@ public class InvWithLinq : BaseSettingsPlugin<InvWithLinqSettings>
 
         foreach (var item in items)
         {
-            if (item.Item == null || item.Address == 0) 
+            if (item?.Item == null || item.Address == 0)
                 continue;
 
+            var metadata = item.Item.Path;
+            var isCurrencyOrQuest = !string.IsNullOrEmpty(metadata) && (
+                metadata.StartsWith("Metadata/Items/Currency/", StringComparison.OrdinalIgnoreCase) ||
+                metadata.StartsWith("Metadata/Items/QuestItems/", StringComparison.OrdinalIgnoreCase));
+
             var modsComp = item.Item.GetComponent<Mods>();
-            if (modsComp?.ExplicitMods == null || modsComp.ExplicitMods.Count == 0 || modsComp.ExplicitMods.Any(m => m?.ModRecord == null))
-                continue;
+
+            // For non-currency/quest items, require valid explicit mods as before
+            if (!isCurrencyOrQuest)
+            {
+                if (modsComp?.ExplicitMods == null || modsComp.ExplicitMods.Count == 0 || modsComp.ExplicitMods.Any(m => m?.ModRecord == null))
+                    continue;
+            }
 
             inventoryItems.Add(new CustomItemData(item.Item, GameController, item.GetClientRect()));
         }
@@ -189,24 +205,36 @@ public class InvWithLinq : BaseSettingsPlugin<InvWithLinqSettings>
 
     private Element GetHoveredItem()
     {
-        return GameController?.IngameState?.UIHover?.Address != 0 && GameController.IngameState.UIHover.Entity.IsValid
-            ? GameController.IngameState.UIHover
-            : null;
+        var hover = GameController?.IngameState?.UIHover;
+        if (hover == null || hover.Address == 0)
+            return null;
+        var entity = hover.Entity;
+        return entity != null && entity.IsValid ? hover : null;
     }
 
     private bool IsStashVisible()
     {
-        return GameController.IngameState.IngameUi.StashElement.IsVisible;
+        return GameController?.IngameState?.IngameUi?.StashElement?.IsVisible == true;
     }
 
     private bool IsInventoryVisible()
     {
-        return GameController.IngameState.IngameUi.InventoryPanel.IsVisible;
+        return GameController?.IngameState?.IngameUi?.InventoryPanel?.IsVisible == true;
     }
     
     private IEnumerable<CustomItemData> GetFilteredInvItems()
     {
-        return _inventItems.Value.Where(x => _itemFilters.Any(y => y.Matches(x) && Settings.InvRules[_itemFilters.IndexOf(y)].Enabled));
+        if (_itemFilters == null || _itemFilters.Count == 0 || Settings?.InvRules == null)
+            return Array.Empty<CustomItemData>();
+        return _inventItems.Value.Where(x =>
+        {
+            for (int i = 0; i < _itemFilters.Count && i < Settings.InvRules.Count; i++)
+            {
+                if (Settings.InvRules[i].Enabled && _itemFilters[i].Matches(x))
+                    return true;
+            }
+            return false;
+        });
     }
 
     internal void ReloadRules()
@@ -216,7 +244,17 @@ public class InvWithLinq : BaseSettingsPlugin<InvWithLinqSettings>
 
     private IEnumerable<CustomItemData> GetFilteredStashItems()
     {
-        return _stashItems.Value.Where(x => _itemFilters.Any(y => y.Matches(x) && Settings.InvRules[_itemFilters.IndexOf(y)].Enabled));
+        if (_itemFilters == null || _itemFilters.Count == 0 || Settings?.InvRules == null)
+            return Array.Empty<CustomItemData>();
+        return _stashItems.Value.Where(x =>
+        {
+            for (int i = 0; i < _itemFilters.Count && i < Settings.InvRules.Count; i++)
+            {
+                if (Settings.InvRules[i].Enabled && _itemFilters[i].Matches(x))
+                    return true;
+            }
+            return false;
+        });
     }
 
     private void PerformItemFilterTest(Element hoveredItem)
@@ -232,7 +270,7 @@ public class InvWithLinq : BaseSettingsPlugin<InvWithLinqSettings>
     private void LoadRules()
     {
         string configDirectory = ConfigDirectory;
-        List<InvRule> existingRules = Settings.InvRules;
+        List<InvRule> existingRules = Settings.InvRules ?? new List<InvRule>();
 
         if (!string.IsNullOrEmpty(Settings.CustomConfigDirectory))
         {
@@ -283,7 +321,10 @@ public class InvWithLinq : BaseSettingsPlugin<InvWithLinqSettings>
 
     private ColorNode GetFilterColor(CustomItemData item)
     {
-        for (int i = 0; i < _itemFilters.Count; i++)
+        if (_itemFilters == null || Settings?.InvRules == null)
+            return Settings?.DefaultFrameColor ?? new ColorNode(Color.White);
+
+        for (int i = 0; i < _itemFilters.Count && i < Settings.InvRules.Count; i++)
         {
             if (Settings.InvRules[i].Enabled && _itemFilters[i].Matches(item))
             {
