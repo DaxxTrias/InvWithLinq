@@ -7,6 +7,7 @@ using System.Linq;
 using ExileCore2;
 using ExileCore2.PoEMemory;
 using ExileCore2.PoEMemory.Components;
+using ExileCore2.PoEMemory.MemoryObjects;
 using ExileCore2.Shared.Cache;
 using ExileCore2.Shared.Helpers;
 using ExileCore2.Shared.Nodes;
@@ -120,27 +121,40 @@ public class InvWithLinq : BaseSettingsPlugin<InvWithLinqSettings>
         if (!IsStashVisible())
             return items;
 
-        // Check if stash is visible in the UI
-        var stashElement = GameController?.Game?.IngameState?.IngameUi?.StashElement;
+        var ingameUi = GameController?.Game?.IngameState?.IngameUi;
+        if (ingameUi == null)
+            return items;
 
-        // We only proceed if either stash or guild stash is open/visible
-        if (stashElement != null && stashElement.IsVisible)
+        // Resolve currently visible stash (player or guild) defensively.
+        // Accessing VisibleStash too early in Guild Stash can probe invalid child indices; guard it.
+        var visibleStash = default(Inventory);
+        try
         {
-            // This is the "currently visible" stash:
-            var visibleStash = stashElement.VisibleStash;
-
-            // Now get the stash items from that visible stash
-            var stashItems = visibleStash?.VisibleInventoryItems;
-            if (stashItems != null)
+            if (ingameUi.StashElement?.IsVisible == true)
             {
-                foreach (var slotItem in stashItems)
-                {
-                    if (slotItem == null || slotItem.Address == 0 || slotItem.Item == null)
-                        continue;
+                visibleStash = ingameUi.StashElement.VisibleStash;
+            }
+            else if (ingameUi.GuildStashElement?.IsVisible == true)
+            {
+                visibleStash = ingameUi.GuildStashElement.VisibleStash;
+            }
+        }
+        catch
+        {
+            // If the UI structure isn't ready (e.g., switching tabs), skip this frame.
+            return items;
+        }
 
-                    var rect = slotItem.GetClientRectCache;
-                    items.Add(new CustomItemData(slotItem.Item, GameController, rect));
-                }
+        var stashItems = TryGetRef(() => visibleStash?.VisibleInventoryItems);
+        if (stashItems != null)
+        {
+            foreach (var slotItem in stashItems)
+            {
+                if (slotItem == null || slotItem.Address == 0 || slotItem.Item == null)
+                    continue;
+
+                var rect = slotItem.GetClientRectCache;
+                items.Add(new CustomItemData(slotItem.Item, GameController, rect));
             }
         }
         return items;
@@ -214,7 +228,8 @@ public class InvWithLinq : BaseSettingsPlugin<InvWithLinqSettings>
 
     private bool IsStashVisible()
     {
-        return GameController?.IngameState?.IngameUi?.StashElement?.IsVisible == true;
+        var ui = GameController?.IngameState?.IngameUi;
+        return ui?.StashElement?.IsVisible == true || ui?.GuildStashElement?.IsVisible == true;
     }
 
     private bool IsInventoryVisible()
@@ -320,6 +335,18 @@ public class InvWithLinq : BaseSettingsPlugin<InvWithLinqSettings>
             }
         }
         return Settings.DefaultFrameColor;
+    }
+
+    private static T? TryGetRef<T>(Func<T> getter) where T : class
+    {
+        try
+        {
+            return getter();
+        }
+        catch
+        {
+            return null;
+        }
     }
 
     //private int SumItemStats(params int[] itemStats)
