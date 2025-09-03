@@ -261,9 +261,19 @@ public class InvWithLinq : BaseSettingsPlugin<InvWithLinqSettings>
     {
         if (_itemFilters == null || _itemFilters.Count == 0 || Settings?.InvRules == null)
             return Array.Empty<CustomItemData>();
-        return _inventItems.Value.Where(x =>
-            _itemFilters.Any(y => y.Matches(x) && (Settings.InvRules.ElementAtOrDefault(_itemFilters.IndexOf(y))?.Enabled == true))
-        );
+        var items = _inventItems.Value;
+        var rules = Settings.InvRules;
+        return items.Where(item =>
+        {
+            for (int i = 0; i < _itemFilters.Count && i < rules.Count; i++)
+            {
+                if (!rules[i].Enabled)
+                    continue;
+                if (_itemFilters[i].Matches(item))
+                    return true;
+            }
+            return false;
+        });
     }
 
     internal void ReloadRules()
@@ -275,9 +285,19 @@ public class InvWithLinq : BaseSettingsPlugin<InvWithLinqSettings>
     {
         if (_itemFilters == null || _itemFilters.Count == 0 || Settings?.InvRules == null)
             return Array.Empty<CustomItemData>();
-        return _stashItems.Value.Where(x =>
-            _itemFilters.Any(y => y.Matches(x) && (Settings.InvRules.ElementAtOrDefault(_itemFilters.IndexOf(y))?.Enabled == true))
-        );
+        var items = _stashItems.Value;
+        var rules = Settings.InvRules;
+        return items.Where(item =>
+        {
+            for (int i = 0; i < _itemFilters.Count && i < rules.Count; i++)
+            {
+                if (!rules[i].Enabled)
+                    continue;
+                if (_itemFilters[i].Matches(item))
+                    return true;
+            }
+            return false;
+        });
     }
 
     private void PerformItemFilterTest(Element hoveredItem)
@@ -311,10 +331,11 @@ public class InvWithLinq : BaseSettingsPlugin<InvWithLinqSettings>
 
         try
         {
-            var newRules = new DirectoryInfo(configDirectory).GetFiles("*.ifl")
+            var discovered = new DirectoryInfo(configDirectory).GetFiles("*.ifl")
                 .Select(x => new InvRule(x.Name, Path.GetRelativePath(configDirectory, x.FullName), false))
-                .ExceptBy(existingRules.Select(x => x.Location), x => x.Location)
-                .ToList();
+                .ToDictionary(r => r.Location, r => r, StringComparer.OrdinalIgnoreCase);
+
+            var newRules = new List<InvRule>();
 
             foreach (var rule in existingRules)
             {
@@ -322,6 +343,7 @@ public class InvWithLinq : BaseSettingsPlugin<InvWithLinqSettings>
                 if (File.Exists(fullPath))
                 {
                     newRules.Add(rule);
+                    discovered.Remove(rule.Location);
                 }
                 else
                 {
@@ -329,8 +351,10 @@ public class InvWithLinq : BaseSettingsPlugin<InvWithLinqSettings>
                 }
             }
 
+            // Append newly discovered rules at the end to preserve user order precedence
+            newRules.AddRange(discovered.Values.OrderBy(r => r.Name, StringComparer.OrdinalIgnoreCase));
+
             _itemFilters = newRules
-                .Where(x => x.Enabled)
                 .Select(x => ItemFilter.LoadFromPath(Path.Combine(configDirectory, x.Location)))
                 .ToList();
 
