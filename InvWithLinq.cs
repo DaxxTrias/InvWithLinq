@@ -35,6 +35,7 @@ public class InvWithLinq : BaseSettingsPlugin<InvWithLinqSettings>
     {
         Settings.ReloadFilters.OnPressed = LoadRules;
         Settings.DumpInventoryItems.OnPressed = DumpItems;
+        Settings.OpenDumpFolder.OnPressed = OpenDumpFolder;
         LoadRules();
         return true;
     }
@@ -55,6 +56,25 @@ public class InvWithLinq : BaseSettingsPlugin<InvWithLinqSettings>
         File.WriteAllLines(path, ItemDebug);
 
         LogMessage("Items in inventory dumped to " + path);
+    }
+
+    private void OpenDumpFolder()
+    {
+        try
+        {
+            var dumpsDir = Path.Combine(DirectoryFullName, "Dumps");
+            Directory.CreateDirectory(dumpsDir);
+            Process.Start(new ProcessStartInfo
+            {
+                FileName = "explorer.exe",
+                Arguments = dumpsDir,
+                UseShellExecute = true
+            });
+        }
+        catch (Exception ex)
+        {
+            DebugWindow.LogError($"{Name}: Failed to open dump folder. {ex.Message}", 10);
+        }
     }
 
     public override void AreaChange(AreaInstance area)
