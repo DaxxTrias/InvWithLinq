@@ -256,3 +256,149 @@ HasTag("Bow") && BaseName.Contains("Dualstring") && (
 - Prefer numeric thresholds to emulate tiers where explicit tier info is unavailable.
 - Use `Count` patterns to express flexible N-of-M requirements instead of long chains of `||`.
 - When testing, paste expressions into the `Filter Test` box and hover an item; the plugin will log whether it matched.
+
+---
+
+### 9) Sockets and Item Quality
+
+Socket count (e.g., pick items with at least 2 sockets):
+
+```csharp
+SocketInfo.SocketNumber >= 2
+```
+
+Generic “value” pickup via quality:
+
+```csharp
+ItemQuality >= 1
+```
+
+Combine with bases:
+
+```csharp
+ItemQuality >= 1
+|| BaseName == "Gold Ring"
+|| BaseName == "Prismatic Ring"
+|| BaseName == "Amethyst Ring"
+|| BaseName == "Gold Amulet"
+|| BaseName == "Stellar Amulet"
+|| BaseName == "Utility Belt"
+|| BaseName == "Sapphire Ring"
+```
+
+---
+
+### 10) ClassName and Tags
+
+You can gate by item class or tags. Use what is available in your build:
+
+```csharp
+ClassName == "Jewel"
+// or, more portable across builds:
+HasTag("Jewel")
+```
+
+---
+
+### 11) Bow: additional arrows/projectiles
+
+Projectiles/Arrows (prefer arrows where relevant to bows):
+
+```csharp
+HasTag("Bow") && (
+  ItemStats[GameStat.NumberOfAdditionalArrows] >= 1
+  || ItemStats[GameStat.NumberOfAdditionalProjectiles] >= 1
+)
+```
+
+Typical bow cluster (mix and match):
+
+```csharp
+HasTag("Bow") && (
+  new [] {
+    ItemStats[GameStat.BowSkillGemLevel] >= 3,
+    ItemStats[GameStat.ProjectileSkillGemLevel] >= 3,
+    ItemStats[GameStat.LocalPhysicalDamagePct] >= 135,
+    ItemStats[GameStat.AttackSpeedPct] >= 14,
+    ItemStats[GameStat.BaseProjectileSpeedPct] >= 14,
+    ItemStats[GameStat.DamagePctWithBowSkills] >= 15,
+  }.Count(x => x) >= 2
+)
+```
+
+---
+
+### 12) Caster/Minion clusters
+
+Caster-focused:
+
+```csharp
+new [] {
+  ItemStats[GameStat.SpellSkillGemLevel] >= 1,
+  ItemStats[GameStat.BaseCastSpeedPct] >= 17,
+  ItemStats[GameStat.SpellDamagePct] >= 25,
+  ItemStats[GameStat.LightningSpellSkillGemLevel] >= 2,
+  ItemStats[GameStat.FireSpellSkillGemLevel] >= 2,
+}.Count(x => x) >= 2
+```
+
+Minion-focused:
+
+```csharp
+new [] {
+  ItemStats[GameStat.MinionSkillGemLevel] >= 2,
+  ItemStats[GameStat.BaseSpiritFromEquipment] >= 5,
+}.Count(x => x) >= 1
+```
+
+---
+
+### 13) Summing resistances with SumItemStats
+
+This plugin exposes a helper to sum numeric stats without arrays. Call it with arguments, not an array literal:
+
+```csharp
+SumItemStats(
+  ItemStats[GameStat.BaseFireDamageResistancePct],
+  ItemStats[GameStat.BaseColdDamageResistancePct],
+  ItemStats[GameStat.BaseLightningDamageResistancePct],
+  ItemStats[GameStat.BaseChaosDamageResistancePct]
+) >= 45
+```
+
+Notes:
+- Do not use `.Value` on `ItemStats[...]`; pass them directly.
+- If your environment does not expose `SumItemStats`, approximate with N-of-M thresholds:
+
+```csharp
+new [] {
+  ItemStats[GameStat.BaseFireDamageResistancePct] >= 15,
+  ItemStats[GameStat.BaseColdDamageResistancePct] >= 15,
+  ItemStats[GameStat.BaseLightningDamageResistancePct] >= 15,
+}.Count(x => x) >= 2
+```
+
+---
+
+### 14) Vendor/NPC contexts (if supported)
+
+If your host supports applying IFL to vendor/NPC inventories, the same patterns work. Common “money”/value filters:
+
+```csharp
+ItemQuality >= 1
+|| BaseName == "Gold Ring"
+|| BaseName == "Prismatic Ring"
+|| BaseName == "Amethyst Ring"
+|| BaseName == "Gold Amulet"
+|| BaseName == "Stellar Amulet"
+|| BaseName == "Utility Belt"
+|| BaseName == "Sapphire Ring"
+```
+
+Sockets are also useful in NPC contexts:
+
+```csharp
+SocketInfo.SocketNumber >= 1
+```
+
+Caveat: This `InvWithLinq` plugin highlights Inventory and Stash. Vendor/NPC usage depends on the host plugin; the rule syntax itself remains the same.
