@@ -187,7 +187,11 @@ public class InvWithLinq : BaseSettingsPlugin<InvWithLinqSettings>
                 }
 
                 var rect = slotItem.GetClientRectCache;
-                items.Add(new CustomItemData(itemEntity, GameController, rect));
+                var safeItem = TryGetRef(() => new CustomItemData(itemEntity, GameController, rect));
+                if (safeItem != null)
+                {
+                    items.Add(safeItem);
+                }
             }
         }
         return items;
@@ -225,7 +229,11 @@ public class InvWithLinq : BaseSettingsPlugin<InvWithLinqSettings>
                     continue;
             }
 
-            inventoryItems.Add(new CustomItemData(item.Item, GameController, item.GetClientRect()));
+            var safeItem = TryGetRef(() => new CustomItemData(item.Item, GameController, item.GetClientRect()));
+            if (safeItem != null)
+            {
+                inventoryItems.Add(safeItem);
+            }
         }
 
         return inventoryItems;
