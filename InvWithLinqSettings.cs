@@ -115,7 +115,7 @@ public class InvWithLinqSettings : ISettings
                     tempNpcInvRules[i].Color.Value.B / 255.0f,
                     tempNpcInvRules[i].Color.Value.A / 255.0f);
 
-                var previewFlags = ImGuiColorEditFlags.AlphaPreview | ImGuiColorEditFlags.AlphaPreviewHalf | ImGuiColorEditFlags.NoTooltip;
+                var previewFlags = ImGuiColorEditFlags.AlphaPreview | ImGuiColorEditFlags.AlphaPreviewHalf | ImGuiColorEditFlags.NoTooltip | ImGuiColorEditFlags.DisplayHex;
                 if (ImGui.ColorButton($"##colorBtn{i}", color, previewFlags, new Vector2(18f, 18f)))
                 {
                     ImGui.OpenPopup($"##colorPopup{i}");
@@ -123,11 +123,31 @@ public class InvWithLinqSettings : ISettings
                 if (ImGui.BeginPopup($"##colorPopup{i}"))
                 {
                     var pickerColor = color;
-                    if (ImGui.ColorPicker4($"##picker{i}", ref pickerColor, ImGuiColorEditFlags.AlphaBar | ImGuiColorEditFlags.DisplayRGB | ImGuiColorEditFlags.InputRGB | ImGuiColorEditFlags.AlphaPreview))
+                    if (ImGui.ColorPicker4($"##picker{i}", ref pickerColor, ImGuiColorEditFlags.AlphaBar | ImGuiColorEditFlags.DisplayRGB | ImGuiColorEditFlags.DisplayHex | ImGuiColorEditFlags.InputRGB | ImGuiColorEditFlags.AlphaPreview))
                     {
                         tempNpcInvRules[i].Color.Value = Color.FromArgb((int)(pickerColor.W * 255), (int)(pickerColor.X * 255), (int)(pickerColor.Y * 255), (int)(pickerColor.Z * 255));
                     }
                     ImGui.EndPopup();
+                }
+
+                // Inline HEX input + Copy/Paste helpers
+                ImGui.SameLine();
+                var ruleKey = $"{tempNpcInvRules[i].Name}|{tempNpcInvRules[i].Location}";
+                if (!_hexByRuleKey.TryGetValue(ruleKey, out var hexStr))
+                {
+                    hexStr = ToHex(tempNpcInvRules[i].Color.Value);
+                    _hexByRuleKey[ruleKey] = hexStr;
+                }
+
+                ImGui.SetNextItemWidth(110f);
+                var editedHex = hexStr;
+                if (ImGui.InputText($"##hex{i}", ref editedHex, 10u, ImGuiInputTextFlags.CharsHexadecimal | ImGuiInputTextFlags.AutoSelectAll))
+                {
+                    _hexByRuleKey[ruleKey] = editedHex;
+                    if (TryParseHexColor(editedHex, out var parsed))
+                    {
+                        tempNpcInvRules[i].Color.Value = parsed;
+                    }
                 }
             }
 
@@ -138,6 +158,43 @@ public class InvWithLinqSettings : ISettings
                 plugin.ReloadRules();
                 _parent._reloadRequired = false;
             }
+        }
+
+        private static readonly System.Collections.Generic.Dictionary<string, string> _hexByRuleKey = new System.Collections.Generic.Dictionary<string, string>();
+
+        private static string ToHex(Color color)
+        {
+            return $"#{color.R:X2}{color.G:X2}{color.B:X2}{color.A:X2}";
+        }
+
+        private static bool TryParseHexColor(string text, out Color result)
+        {
+            result = Color.Empty;
+            if (string.IsNullOrWhiteSpace(text)) return false;
+
+            var s = text.Trim();
+            if (s.StartsWith("#")) s = s.Substring(1);
+            if (s.StartsWith("0x", System.StringComparison.OrdinalIgnoreCase)) s = s.Substring(2);
+
+            if (s.Length != 6 && s.Length != 8) return false;
+
+            byte r = 0, g = 0, b = 0;
+            var style = System.Globalization.NumberStyles.HexNumber;
+            bool ok = byte.TryParse(s.Substring(0, 2), style, null, out r)
+                   && byte.TryParse(s.Substring(2, 2), style, null, out g)
+                   && byte.TryParse(s.Substring(4, 2), style, null, out b);
+
+            if (!ok) return false;
+
+            byte a = 255;
+            if (s.Length == 8)
+            {
+                if (!byte.TryParse(s.Substring(6, 2), style, null, out a))
+                    return false;
+            }
+
+            result = Color.FromArgb(a, r, g, b);
+            return true;
         }
     }
 }
