@@ -42,20 +42,73 @@ public class InvWithLinq : BaseSettingsPlugin<InvWithLinqSettings>
 
     private void DumpItems()
     {
-        ItemDebug.Clear();
-        foreach (var item in GetInventoryItems())
+        var stopwatch = Stopwatch.StartNew();
+        int processed = 0;
+        int failed = 0;
+        try
         {
-            var affixes = GetItemAffixes(item);
-            ItemDebug.AddRange(affixes);
+            ItemDebug.Clear();
+            // Use raw enumeration for dumps to avoid skipping items due to new/unknown mods or hidden UI.
+            var items = GetInventoryItemsRaw();
+
+            if (items == null || items.Count == 0)
+            {
+                DebugWindow.LogMsg($"{Name}: No inventory items found to dump.", 5);
+            }
+
+            foreach (var item in items)
+            {
+                try
+                {
+                    var affixes = GetItemAffixes(item);
+                    ItemDebug.AddRange(affixes);
+                    processed++;
+                }
+                catch (Exception ex)
+                {
+                    failed++;
+                    var baseName = item?.Entity?.GetComponent<Base>()?.Name ?? "(Unknown Base)";
+                    var displayName = item?.Name ?? "(Unnamed)";
+                    var path = item?.Entity?.Path ?? "(UnknownPath)";
+                    ItemDebug.Add($"{baseName} - {displayName} (Path: {path})");
+                    ItemDebug.Add($"  ! Error collecting affixes: {ex.GetType().Name}: {ex.Message}");
+                }
+            }
+
+            Directory.CreateDirectory(Path.Combine(DirectoryFullName, "Dumps"));
+            var pathOut = Path.Combine(DirectoryFullName, "Dumps",
+                $"{GameController.Area.CurrentArea.Name}.txt");
+
+            try
+            {
+                File.WriteAllLines(pathOut, ItemDebug);
+            }
+            catch (Exception ioEx)
+            {
+                failed++;
+                DebugWindow.LogError($"{Name}: Failed to write dump file to '{pathOut}'. {ioEx.GetType().Name}: {ioEx.Message}", 10);
+                // Attempt a fallback path with timestamp in filename to avoid lock/collisions
+                var fallback = Path.Combine(DirectoryFullName, "Dumps",
+                    $"{GameController.Area.CurrentArea.Name}_{DateTime.Now:yyyyMMdd_HHmmss}.txt");
+                try
+                {
+                    File.WriteAllLines(fallback, ItemDebug);
+                    DebugWindow.LogMsg($"{Name}: Wrote dump to fallback path: {fallback}", 8);
+                }
+                catch (Exception fallbackEx)
+                {
+                    DebugWindow.LogError($"{Name}: Fallback write also failed. {fallbackEx.GetType().Name}: {fallbackEx.Message}", 10);
+                }
+            }
+
+            stopwatch.Stop();
+            LogMessage($"Inventory dump complete. Items processed: {processed}, failures: {failed}, time: {stopwatch.ElapsedMilliseconds} ms.");
         }
-
-        Directory.CreateDirectory(Path.Combine(DirectoryFullName, "Dumps"));
-        var path = Path.Combine(DirectoryFullName, "Dumps",
-            $"{GameController.Area.CurrentArea.Name}.txt");
-
-        File.WriteAllLines(path, ItemDebug);
-
-        LogMessage("Items in inventory dumped to " + path);
+        catch (Exception ex)
+        {
+            stopwatch.Stop();
+            DebugWindow.LogError($"{Name}: DumpItems failed. {ex.GetType().Name}: {ex.Message}", 10);
+        }
     }
 
     private void OpenDumpFolder()
@@ -239,21 +292,67 @@ public class InvWithLinq : BaseSettingsPlugin<InvWithLinqSettings>
         return inventoryItems;
     }
 
+    private List<CustomItemData> GetInventoryItemsRaw()
+    {
+        var inventoryItems = new List<CustomItemData>();
+
+        var inventory = GameController?.Game?.IngameState?.Data?.ServerData?.PlayerInventories?[0]?.Inventory;
+        var items = inventory?.InventorySlotItems;
+
+        if (items == null)
+            return inventoryItems;
+
+        foreach (var item in items)
+        {
+            if (item?.Item == null || item.Address == 0)
+                continue;
+
+            var safeItem = TryGetRef(() => new CustomItemData(item.Item, GameController));
+            if (safeItem != null)
+            {
+                inventoryItems.Add(safeItem);
+            }
+        }
+
+        return inventoryItems;
+    }
+
     private List<string> GetItemAffixes(CustomItemData item)
     {
         var affixes = new List<string>();
-        var mods = item.Entity?.GetComponent<Mods>();
-
-        if (mods != null)
+        try
         {
-            affixes.Add(item.Entity.GetComponent<Base>().Name + " - " + item.Name);
-            foreach (var mod in mods.ExplicitMods)
+            var baseName = item?.Entity?.GetComponent<Base>()?.Name ?? "(Unknown Base)";
+            var displayName = item?.Name ?? "(Unnamed)";
+            affixes.Add(baseName + " - " + displayName);
+
+            var mods = item?.Entity?.GetComponent<Mods>();
+            var explicitMods = mods?.ExplicitMods;
+            if (explicitMods == null || explicitMods.Count == 0)
             {
-                foreach (var stat in mod.ModRecord.StatNames)
+                affixes.Add("  - (no explicit mods)");
+                return affixes;
+            }
+
+            foreach (var mod in explicitMods)
+            {
+                if (mod?.ModRecord == null)
+                    continue;
+                var stats = mod.ModRecord.StatNames;
+                if (stats == null || !stats.Any())
+                    continue;
+                foreach (var stat in stats)
                 {
-                    affixes.Add($"  - {stat.MatchingStat}");
+                    if (stat == null)
+                        continue;
+                    var text = stat.MatchingStat;
+                    affixes.Add($"  - {text}");
                 }
             }
+        }
+        catch (Exception ex)
+        {
+            affixes.Add($"  ! Error parsing mods: {ex.GetType().Name}: {ex.Message}");
         }
         return affixes;
     }
@@ -325,9 +424,16 @@ public class InvWithLinq : BaseSettingsPlugin<InvWithLinqSettings>
     {
         if (Settings.FilterTest.Value is { Length: > 0 } && hoveredItem != null)
         {
-            var filter = ItemFilter.LoadFromString(Settings.FilterTest);
-            var matched = filter.Matches(new ItemData(hoveredItem.Entity, GameController));
-            DebugWindow.LogMsg($"{Name}: [Filter Test] Hovered Item: {matched}", 5);
+            try
+            {
+                var filter = ItemFilter.LoadFromString(Settings.FilterTest);
+                var matched = filter.Matches(new ItemData(hoveredItem.Entity, GameController));
+                DebugWindow.LogMsg($"{Name}: [Filter Test] Hovered Item: {matched}", 5);
+            }
+            catch (Exception ex)
+            {
+                DebugWindow.LogError($"{Name}: [Filter Test] Error: {ex.GetType().Name}: {ex.Message}", 8);
+            }
         }
     }
 
