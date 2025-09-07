@@ -423,28 +423,126 @@ public class InvWithLinq : BaseSettingsPlugin<InvWithLinqSettings>
             affixes.Add(baseName + " - " + displayName);
 
             var mods = item?.Entity?.GetComponent<Mods>();
+            var implicitMods = mods?.ImplicitMods;
             var explicitMods = mods?.ExplicitMods;
-            if (explicitMods == null || explicitMods.Count == 0)
+
+            // If item has no implicit or explicit mods, keep dump concise
+            if ((implicitMods == null || implicitMods.Count == 0) && (explicitMods == null || explicitMods.Count == 0))
             {
-                affixes.Add("  - (no explicit mods)");
+                affixes.Add("  - No Affixes");
                 return affixes;
             }
 
-            foreach (var mod in explicitMods)
+            // Implicit section
+            affixes.Add("[Implicits]");
+            if (implicitMods != null && implicitMods.Count > 0)
             {
-                if (mod?.ModRecord == null)
-                    continue;
-                var stats = mod.ModRecord.StatNames;
-                if (stats == null || !stats.Any())
-                    continue;
-#pragma warning disable CA1860 // Avoid using 'Enumerable.Any()' extension method
-                foreach (var stat in stats)
-#pragma warning restore CA1860
+                foreach (var imod in implicitMods)
                 {
-                    if (stat == null)
+                    if (imod?.ModRecord == null)
                         continue;
-                    var text = stat.MatchingStat;
-                    affixes.Add($"  - {text}");
+                    var stats = imod.ModRecord.StatNames;
+                    if (stats == null)
+                        continue;
+#pragma warning disable CA1860
+                    foreach (var stat in stats)
+#pragma warning restore CA1860
+                    {
+                        if (stat == null)
+                            continue;
+                        var text = stat.MatchingStat;
+                        affixes.Add($"  - {text}");
+                    }
+                }
+            }
+            else
+            {
+                affixes.Add("  (none)");
+            }
+
+            // Explicit section split into prefixes/suffixes
+            affixes.Add("[Explicits]");
+            if (explicitMods == null || explicitMods.Count == 0)
+            {
+                affixes.Add("  (none)");
+                return affixes;
+            }
+
+            var prefixes = new List<object>();
+            var suffixes = new List<object>();
+            foreach (var emod in explicitMods)
+            {
+                if (emod?.ModRecord == null)
+                    continue;
+                var affixTypeObj = TryGetPropertyValue(emod.ModRecord, "AffixType");
+                var kind = affixTypeObj?.ToString()?.Trim();
+                if (!string.IsNullOrEmpty(kind) && kind.Equals("Prefix", StringComparison.OrdinalIgnoreCase))
+                {
+                    prefixes.Add(emod);
+                }
+                else if (!string.IsNullOrEmpty(kind) && kind.Equals("Suffix", StringComparison.OrdinalIgnoreCase))
+                {
+                    suffixes.Add(emod);
+                }
+                else
+                {
+                    // If not specified, try GenerationType text as a fallback
+                    var genType = TryGetPropertyValue(emod.ModRecord, "GenerationType")?.ToString();
+                    if (!string.IsNullOrEmpty(genType) && genType.IndexOf("prefix", StringComparison.OrdinalIgnoreCase) >= 0)
+                        prefixes.Add(emod);
+                    else if (!string.IsNullOrEmpty(genType) && genType.IndexOf("suffix", StringComparison.OrdinalIgnoreCase) >= 0)
+                        suffixes.Add(emod);
+                    else
+                        prefixes.Add(emod); // default bucket
+                }
+            }
+
+            // Print prefixes then suffixes
+            affixes.Add("  [Prefixes]");
+            if (prefixes.Count == 0)
+            {
+                affixes.Add("    (none)");
+            }
+            else
+            {
+                foreach (dynamic pmod in prefixes)
+                {
+                    var stats = pmod.ModRecord?.StatNames;
+                    if (stats == null)
+                        continue;
+#pragma warning disable CA1860
+                    foreach (var stat in stats)
+#pragma warning restore CA1860
+                    {
+                        if (stat == null)
+                            continue;
+                        var text = stat.MatchingStat;
+                        affixes.Add($"    - {text}");
+                    }
+                }
+            }
+
+            affixes.Add("  [Suffixes]");
+            if (suffixes.Count == 0)
+            {
+                affixes.Add("    (none)");
+            }
+            else
+            {
+                foreach (dynamic smod in suffixes)
+                {
+                    var stats = smod.ModRecord?.StatNames;
+                    if (stats == null)
+                        continue;
+#pragma warning disable CA1860
+                    foreach (var stat in stats)
+#pragma warning restore CA1860
+                    {
+                        if (stat == null)
+                            continue;
+                        var text = stat.MatchingStat;
+                        affixes.Add($"    - {text}");
+                    }
                 }
             }
         }
