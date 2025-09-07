@@ -218,36 +218,127 @@ public class InvWithLinq : BaseSettingsPlugin<InvWithLinqSettings>
             return items;
         }
 
-        var stashItems = TryGetRef(() => visibleStash?.VisibleInventoryItems);
-        if (stashItems != null)
+        // Aggregate items from the primary visible stash
+        if (visibleStash != null)
         {
-            foreach (var slotItem in stashItems)
+            AddItemsFromInventory(visibleStash, items);
+
+            // If this tab is a nested container (folder), also traverse its visible nested inventories
+            if (TryGetBoolFromProperty(visibleStash, "IsNestedInventory"))
             {
-                if (slotItem == null || slotItem.Address == 0 || slotItem.Item == null)
-                    continue;
-
-                var itemEntity = slotItem.Item;
-                var metadata = itemEntity.Path;
-                var isCurrencyOrQuest = !string.IsNullOrEmpty(metadata) && (
-                    metadata.StartsWith("Metadata/Items/Currency/", StringComparison.OrdinalIgnoreCase) ||
-                    metadata.StartsWith("Metadata/Items/QuestItems/", StringComparison.OrdinalIgnoreCase));
-
-                if (!isCurrencyOrQuest)
+                var nestedInventories = TryGetInventoriesFromProperties(visibleStash, "NestedVisibleInventory");
+                if (nestedInventories == null)
                 {
-                    var modsComp = itemEntity.GetComponent<Mods>();
-                    if (modsComp?.ExplicitMods == null || modsComp.ExplicitMods.Count == 0 || modsComp.ExplicitMods.Any(m => m?.ModRecord == null))
-                        continue;
+                    var nestedContainer = TryGetPropertyValue(visibleStash, "NestedStashContainer");
+                    if (nestedContainer != null)
+                    {
+                        nestedInventories = TryGetInventoriesFromProperties(nestedContainer, "NestedVisibleInventory", "VisibleInventories", "Inventories");
+                    }
                 }
-
-                var rect = slotItem.GetClientRectCache;
-                var safeItem = TryGetRef(() => new CustomItemData(itemEntity, GameController, rect));
-                if (safeItem != null)
+                if (nestedInventories != null)
                 {
-                    items.Add(safeItem);
+                    foreach (var nested in nestedInventories)
+                    {
+                        if (nested != null)
+                            AddItemsFromInventory(nested, items);
+                    }
                 }
             }
         }
+
         return items;
+    }
+
+    private void AddItemsFromInventory(Inventory inventory, List<CustomItemData> items)
+    {
+        var stashItems = TryGetRef(() => inventory?.VisibleInventoryItems);
+        if (stashItems == null)
+            return;
+
+        foreach (var slotItem in stashItems)
+        {
+            if (slotItem == null || slotItem.Address == 0 || slotItem.Item == null)
+                continue;
+
+            var itemEntity = slotItem.Item;
+            var metadata = itemEntity.Path;
+            var isCurrencyOrQuest = !string.IsNullOrEmpty(metadata) && (
+                metadata.StartsWith("Metadata/Items/Currency/", StringComparison.OrdinalIgnoreCase) ||
+                metadata.StartsWith("Metadata/Items/QuestItems/", StringComparison.OrdinalIgnoreCase));
+
+            if (!isCurrencyOrQuest)
+            {
+                var modsComp = itemEntity.GetComponent<Mods>();
+                if (modsComp?.ExplicitMods == null || modsComp.ExplicitMods.Count == 0 || modsComp.ExplicitMods.Any(m => m?.ModRecord == null))
+                    continue;
+            }
+
+            var rect = slotItem.GetClientRectCache;
+            var safeItem = TryGetRef(() => new CustomItemData(itemEntity, GameController, rect));
+            if (safeItem != null)
+            {
+                items.Add(safeItem);
+            }
+        }
+    }
+
+    private static bool TryGetBoolFromProperty(object source, string propertyName)
+    {
+        try
+        {
+            if (source == null) return false;
+            var prop = source.GetType().GetProperty(propertyName);
+            if (prop == null) return false;
+            var value = prop.GetValue(source);
+            return value is bool b && b;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    private static object? TryGetPropertyValue(object source, string propertyName)
+    {
+        try
+        {
+            if (source == null) return null;
+            var prop = source.GetType().GetProperty(propertyName);
+            return prop?.GetValue(source);
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    private static List<Inventory>? TryGetInventoriesFromProperties(object source, params string[] propertyNames)
+    {
+        foreach (var name in propertyNames)
+        {
+            try
+            {
+                var val = TryGetPropertyValue(source, name);
+                if (val is System.Collections.IEnumerable enumerable)
+                {
+                    var list = new List<Inventory>();
+                    foreach (var obj in enumerable)
+                    {
+                        if (obj is Inventory inv && inv != null)
+                        {
+                            list.Add(inv);
+                        }
+                    }
+                    if (list.Count > 0)
+                        return list;
+                }
+            }
+            catch
+            {
+                // ignore and try next
+            }
+        }
+        return null;
     }
 
     private List<CustomItemData> GetInventoryItems()
