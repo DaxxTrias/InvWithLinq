@@ -66,7 +66,7 @@ Some builds expose open slot counts:
 
 ```csharp
 // Require at least one open suffix (craftable) and one open prefix
-HasTag("Ring") && OpenSuffixCount >= 1 && OpenPrefixCount >= 1
+HasTag("Ring") && OpenSuffixCount() >= 1 && OpenPrefixCount() >= 1
 ```
 
 If these symbols are not available in your environment, this feature is not supported and the rule will fail to compile. In that case, approximate by requiring only the affixes you care about and review items manually for open slots.

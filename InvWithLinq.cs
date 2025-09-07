@@ -4,6 +4,7 @@ using System.Diagnostics;
 using System.Drawing;
 using System.IO;
 using System.Linq;
+using System.Text.RegularExpressions;
 using ExileCore2;
 using ExileCore2.PoEMemory;
 using ExileCore2.PoEMemory.Components;
@@ -23,7 +24,16 @@ public class InvWithLinq : BaseSettingsPlugin<InvWithLinqSettings>
     private readonly TimeCache<List<CustomItemData>> _inventItems;
     private readonly TimeCache<List<CustomItemData>> _stashItems;
     private List<ItemFilter> _itemFilters;
+    private List<CompiledRule> _compiledRules;
     private readonly List<string> ItemDebug = [];
+
+    private sealed class CompiledRule
+    {
+        public required ItemFilter Filter { get; init; }
+        public InvRule RuleMeta { get; init; }
+        public int? MinOpenPrefixes { get; init; }
+        public int? MinOpenSuffixes { get; init; }
+    }
 
     public InvWithLinq()
     {
@@ -39,6 +49,23 @@ public class InvWithLinq : BaseSettingsPlugin<InvWithLinqSettings>
         Settings.OpenDumpFolder.OnPressed = OpenDumpFolder;
         LoadRules();
         return true;
+    }
+
+    private bool ExtraOpenAffixConstraintsPass(ItemData item, CompiledRule rule)
+    {
+        if (rule.MinOpenPrefixes is null && rule.MinOpenSuffixes is null)
+            return true;
+        var ok = true;
+        if (rule.MinOpenPrefixes is int pReq)
+        {
+            ok &= ItemFilterUtils.OpenPrefixCount(item) >= pReq;
+            if (!ok) return false;
+        }
+        if (rule.MinOpenSuffixes is int sReq)
+        {
+            ok &= ItemFilterUtils.OpenSuffixCount(item) >= sReq;
+        }
+        return ok;
     }
 
     private void DumpItems()
@@ -461,20 +488,39 @@ public class InvWithLinq : BaseSettingsPlugin<InvWithLinqSettings>
     
     private IEnumerable<CustomItemData> GetFilteredInvItems()
     {
-        if (_itemFilters == null || _itemFilters.Count == 0 || Settings?.InvRules == null)
+        if ((_compiledRules == null || _compiledRules.Count == 0) && (_itemFilters == null || _itemFilters.Count == 0) || Settings?.InvRules == null)
             return Array.Empty<CustomItemData>();
         var items = _inventItems.Value;
         var rules = Settings.InvRules;
         return items.Where(item =>
         {
-            for (int i = 0; i < _itemFilters.Count && i < rules.Count; i++)
+            try
             {
-                if (!rules[i].Enabled)
-                    continue;
-                if (_itemFilters[i].Matches(item))
-                    return true;
+                for (int i = 0; i < rules.Count; i++)
+                {
+                    if (!rules[i].Enabled)
+                        continue;
+
+                    // Prefer compiled rules with extra constraints when available
+                    if (_compiledRules != null && i < _compiledRules.Count && _compiledRules[i] != null)
+                    {
+                        var cr = _compiledRules[i];
+                        if (!ExtraOpenAffixConstraintsPass(item, cr))
+                            continue;
+                        if (cr.Filter.Matches(item))
+                            return true;
+                    }
+                    else if (_itemFilters != null && i < _itemFilters.Count)
+                    {
+                        if (_itemFilters[i].Matches(item))
+                            return true;
+                    }
+                }
+                return false;
             }
-            return false;
+            finally
+            {
+            }
         });
     }
 
@@ -485,20 +531,38 @@ public class InvWithLinq : BaseSettingsPlugin<InvWithLinqSettings>
 
     private IEnumerable<CustomItemData> GetFilteredStashItems()
     {
-        if (_itemFilters == null || _itemFilters.Count == 0 || Settings?.InvRules == null)
+        if ((_compiledRules == null || _compiledRules.Count == 0) && (_itemFilters == null || _itemFilters.Count == 0) || Settings?.InvRules == null)
             return Array.Empty<CustomItemData>();
         var items = _stashItems.Value;
         var rules = Settings.InvRules;
         return items.Where(item =>
         {
-            for (int i = 0; i < _itemFilters.Count && i < rules.Count; i++)
+            try
             {
-                if (!rules[i].Enabled)
-                    continue;
-                if (_itemFilters[i].Matches(item))
-                    return true;
+                for (int i = 0; i < rules.Count; i++)
+                {
+                    if (!rules[i].Enabled)
+                        continue;
+
+                    if (_compiledRules != null && i < _compiledRules.Count && _compiledRules[i] != null)
+                    {
+                        var cr = _compiledRules[i];
+                        if (!ExtraOpenAffixConstraintsPass(item, cr))
+                            continue;
+                        if (cr.Filter.Matches(item))
+                            return true;
+                    }
+                    else if (_itemFilters != null && i < _itemFilters.Count)
+                    {
+                        if (_itemFilters[i].Matches(item))
+                            return true;
+                    }
+                }
+                return false;
             }
-            return false;
+            finally
+            {
+            }
         });
     }
 
@@ -508,8 +572,14 @@ public class InvWithLinq : BaseSettingsPlugin<InvWithLinqSettings>
         {
             try
             {
-                var filter = ItemFilter.LoadFromString(Settings.FilterTest);
-                var matched = filter.Matches(new ItemData(hoveredItem.Entity, GameController));
+                // Apply the same preprocessing as real rules so Open* tokens are supported
+                var expr = Settings.FilterTest.Value;
+                var _ = TryExtractOpenCounts(expr, out var cleaned, out var minPref, out var minSuff);
+                var filter = ItemFilter.LoadFromString(cleaned);
+                var itemCtx = new ItemData(hoveredItem.Entity, GameController);
+                var openOk = (minPref is null || ItemFilterUtils.OpenPrefixCount(itemCtx) >= minPref)
+                             && (minSuff is null || ItemFilterUtils.OpenSuffixCount(itemCtx) >= minSuff);
+                var matched = openOk && filter.Matches(itemCtx);
                 DebugWindow.LogMsg($"{Name}: [Filter Test] Hovered Item: {matched}", 5);
             }
             catch (Exception ex)
@@ -545,6 +615,7 @@ public class InvWithLinq : BaseSettingsPlugin<InvWithLinqSettings>
                 .ToDictionary(r => r.Location, r => r, StringComparer.OrdinalIgnoreCase);
 
             var newRules = new List<InvRule>();
+            var compiled = new List<CompiledRule>();
 
             foreach (var rule in existingRules)
             {
@@ -553,6 +624,18 @@ public class InvWithLinq : BaseSettingsPlugin<InvWithLinqSettings>
                 {
                     newRules.Add(rule);
                     discovered.Remove(rule.Location);
+
+                    // Preprocess and compile with extra constraints support
+                    var text = File.ReadAllText(fullPath);
+                    TryExtractOpenCounts(text, out var cleaned, out var minPref, out var minSuff);
+                    var filter = ItemFilter.LoadFromString(cleaned);
+                    compiled.Add(new CompiledRule
+                    {
+                        Filter = filter,
+                        RuleMeta = rule,
+                        MinOpenPrefixes = minPref,
+                        MinOpenSuffixes = minSuff,
+                    });
                 }
                 else
                 {
@@ -561,18 +644,80 @@ public class InvWithLinq : BaseSettingsPlugin<InvWithLinqSettings>
             }
 
             // Append newly discovered rules at the end to preserve user order precedence
-            newRules.AddRange(discovered.Values.OrderBy(r => r.Name, StringComparer.OrdinalIgnoreCase));
+            foreach (var r in discovered.Values.OrderBy(r => r.Name, StringComparer.OrdinalIgnoreCase))
+            {
+                var fullPath = Path.Combine(configDirectory, r.Location);
+                var text = File.Exists(fullPath) ? File.ReadAllText(fullPath) : string.Empty;
+                TryExtractOpenCounts(text, out var cleaned, out var minPref, out var minSuff);
+                var filter = ItemFilter.LoadFromString(cleaned);
+                newRules.Add(r);
+                compiled.Add(new CompiledRule
+                {
+                    Filter = filter,
+                    RuleMeta = r,
+                    MinOpenPrefixes = minPref,
+                    MinOpenSuffixes = minSuff,
+                });
+            }
 
-            _itemFilters = newRules
-                .Select(x => ItemFilter.LoadFromPath(Path.Combine(configDirectory, x.Location)))
-                .ToList();
-
+            _itemFilters = compiled.Select(c => c.Filter).ToList();
+            _compiledRules = compiled;
             Settings.InvRules = newRules;
         }
         catch (Exception e)
         {
             DebugWindow.LogError($"{Name}: Filter Load Error.\n{e}", 15);
         }
+    }
+
+    private static readonly Regex OpenPrefixRegex = new Regex(@"OpenPrefixCount\s*\(\)\s*(==|>=|<=|>|<)\s*(\d+)", RegexOptions.Compiled | RegexOptions.CultureInvariant);
+    private static readonly Regex OpenSuffixRegex = new Regex(@"OpenSuffixCount\s*\(\)\s*(==|>=|<=|>|<)\s*(\d+)", RegexOptions.Compiled | RegexOptions.CultureInvariant);
+
+    private static bool TryExtractOpenCounts(string expr, out string cleanedExpr, out int? minPrefixes, out int? minSuffixes)
+    {
+        int? localMinPrefixes = null;
+        int? localMinSuffixes = null;
+        var cleaned = expr;
+
+        cleaned = OpenPrefixRegex.Replace(cleaned, m =>
+        {
+            var op = m.Groups[1].Value;
+            var num = int.Parse(m.Groups[2].Value);
+            localMinPrefixes = MergeConstraint(localMinPrefixes, op, num);
+            return "true"; // neutralize in expression
+        });
+        cleaned = OpenSuffixRegex.Replace(cleaned, m =>
+        {
+            var op = m.Groups[1].Value;
+            var num = int.Parse(m.Groups[2].Value);
+            localMinSuffixes = MergeConstraint(localMinSuffixes, op, num);
+            return "true";
+        });
+
+        cleanedExpr = cleaned;
+        minPrefixes = localMinPrefixes;
+        minSuffixes = localMinSuffixes;
+        return minPrefixes != null || minSuffixes != null;
+    }
+
+    private static int? MergeConstraint(int? existing, string op, int value)
+    {
+        // We normalize to a minimum required open slots based on operator.
+        int threshold = op switch
+        {
+            ">" => value + 1,
+            ">=" => value,
+            "==" => value,
+            "<" => int.MinValue, // not a useful min; will be ignored in check logic
+            "<=" => int.MinValue,
+            _ => value,
+        };
+        if (op == "==")
+        {
+            return value; // equality overrides
+        }
+        if (existing is null) return threshold;
+        return Math.Max(existing.Value, threshold);
     }
 
     private ColorNode GetFilterColor(CustomItemData item)
