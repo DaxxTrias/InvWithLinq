@@ -14,6 +14,8 @@ using ExileCore2.Shared.Nodes;
 using ImGuiNET;
 using ItemFilterLibrary;
 
+#nullable enable
+
 namespace InvWithLinq;
 
 public class InvWithLinq : BaseSettingsPlugin<InvWithLinqSettings>
@@ -21,8 +23,7 @@ public class InvWithLinq : BaseSettingsPlugin<InvWithLinqSettings>
     private readonly TimeCache<List<CustomItemData>> _inventItems;
     private readonly TimeCache<List<CustomItemData>> _stashItems;
     private List<ItemFilter> _itemFilters;
-    private bool _isInTown = true;
-    private readonly List<string> ItemDebug = new List<string>();
+    private readonly List<string> ItemDebug = [];
 
     public InvWithLinq()
     {
@@ -127,18 +128,6 @@ public class InvWithLinq : BaseSettingsPlugin<InvWithLinqSettings>
         catch (Exception ex)
         {
             DebugWindow.LogError($"{Name}: Failed to open dump folder. {ex.Message}", 10);
-        }
-    }
-
-    public override void AreaChange(AreaInstance area)
-    {
-        if (area.IsHideout || area.IsTown)
-        {
-            _isInTown = true;
-        }
-        else
-        {
-            _isInTown = false;
         }
     }
 
@@ -408,7 +397,7 @@ public class InvWithLinq : BaseSettingsPlugin<InvWithLinqSettings>
         return inventoryItems;
     }
 
-    private List<string> GetItemAffixes(CustomItemData item)
+    private static List<string> GetItemAffixes(CustomItemData item)
     {
         var affixes = new List<string>();
         try
@@ -432,7 +421,9 @@ public class InvWithLinq : BaseSettingsPlugin<InvWithLinqSettings>
                 var stats = mod.ModRecord.StatNames;
                 if (stats == null || !stats.Any())
                     continue;
+#pragma warning disable CA1860 // Avoid using 'Enumerable.Any()' extension method
                 foreach (var stat in stats)
+#pragma warning restore CA1860
                 {
                     if (stat == null)
                         continue;
