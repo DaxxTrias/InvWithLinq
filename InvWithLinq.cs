@@ -277,17 +277,6 @@ public class InvWithLinq : BaseSettingsPlugin<InvWithLinqSettings>
                 continue;
 
             var itemEntity = slotItem.Item;
-            var metadata = itemEntity.Path;
-            var isCurrencyOrQuest = !string.IsNullOrEmpty(metadata) && (
-                metadata.StartsWith("Metadata/Items/Currency/", StringComparison.OrdinalIgnoreCase) ||
-                metadata.StartsWith("Metadata/Items/QuestItems/", StringComparison.OrdinalIgnoreCase));
-
-            if (!isCurrencyOrQuest)
-            {
-                var modsComp = itemEntity.GetComponent<Mods>();
-                if (modsComp?.ExplicitMods == null || modsComp.ExplicitMods.Count == 0 || modsComp.ExplicitMods.Any(m => m?.ModRecord == null))
-                    continue;
-            }
 
             var rect = slotItem.GetClientRectCache;
             var safeItem = TryGetRef(() => new CustomItemData(itemEntity, GameController, rect));
