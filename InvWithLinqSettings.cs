@@ -41,6 +41,7 @@ public class InvWithLinqSettings : ISettings
     [Menu("Use a Custom \"\\config\\custom_folder\" Folder")]
     public TextNode CustomConfigDirectory { get; set; } = new TextNode();
     
+    [IgnoreMenu]
     public List<InvRule> InvRules { get; set; } = new List<InvRule>();
 
     [JsonIgnore]
