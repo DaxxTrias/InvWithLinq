@@ -14,6 +14,7 @@ using ExileCore2.Shared.Helpers;
 using ExileCore2.Shared.Nodes;
 using ImGuiNET;
 using ItemFilterLibrary;
+using RectangleF = ExileCore2.Shared.RectangleF;
 
 #nullable enable
 
@@ -33,6 +34,8 @@ public class InvWithLinq : BaseSettingsPlugin<InvWithLinqSettings>
         public InvRule RuleMeta { get; init; }
         public int? MinOpenPrefixes { get; init; }
         public int? MinOpenSuffixes { get; init; }
+        public int? MaxOpenPrefixes { get; init; }
+        public int? MaxOpenSuffixes { get; init; }
     }
 
     public InvWithLinq()
@@ -53,17 +56,27 @@ public class InvWithLinq : BaseSettingsPlugin<InvWithLinqSettings>
 
     private bool ExtraOpenAffixConstraintsPass(ItemData item, CompiledRule rule)
     {
-        if (rule.MinOpenPrefixes is null && rule.MinOpenSuffixes is null)
+        if (rule.MinOpenPrefixes is null && rule.MinOpenSuffixes is null && rule.MaxOpenPrefixes is null && rule.MaxOpenSuffixes is null)
             return true;
         var ok = true;
         if (rule.MinOpenPrefixes is int pReq)
         {
-            ok &= ItemFilterUtils.OpenPrefixCount(item) >= pReq;
+            ok &= OpenPrefixCount(item) >= pReq;
+            if (!ok) return false;
+        }
+        if (rule.MaxOpenPrefixes is int pMax)
+        {
+            ok &= OpenPrefixCount(item) <= pMax;
             if (!ok) return false;
         }
         if (rule.MinOpenSuffixes is int sReq)
         {
-            ok &= ItemFilterUtils.OpenSuffixCount(item) >= sReq;
+            ok &= OpenSuffixCount(item) >= sReq;
+            if (!ok) return false;
+        }
+        if (rule.MaxOpenSuffixes is int sMax)
+        {
+            ok &= OpenSuffixCount(item) <= sMax;
         }
         return ok;
     }
@@ -165,38 +178,54 @@ public class InvWithLinq : BaseSettingsPlugin<InvWithLinqSettings>
         if (!IsInventoryVisible())
             return;
 
-        foreach (var item in GetFilteredInvItems())
+        var invItems = GetFilteredInvItems().ToList();
+        var invBounds = GetInventoryBounds();
+        if (invBounds.Width <= 1 || invBounds.Height <= 1)
+            invBounds = BuildUnionRect(invItems);
+        foreach (var item in invItems)
         {
             var frameColor = GetFilterColor(item);
+            var itemRect = item.ClientRectangleCache;
+            var drawRect = IntersectRect(itemRect, invBounds);
+            if (drawRect.Width <= 1 || drawRect.Height <= 1)
+                continue;
             var hoverIntersects = hoveredItem != null && hoveredItem.Tooltip != null && item?.Entity != null && hoveredItem.Entity != null &&
-                                  hoveredItem.Tooltip.GetClientRectCache.Intersects(item.ClientRectangleCache) &&
+                                  hoveredItem.Tooltip.GetClientRectCache.Intersects(drawRect) &&
                                   hoveredItem.Entity.Address != item.Entity.Address;
             if (hoverIntersects)
             {
-                Graphics.DrawFrame(item.ClientRectangleCache, frameColor.Value.ToImguiVec4(45).ToColor(), Settings.FrameThickness);
+                Graphics.DrawFrame(drawRect, frameColor.Value.ToImguiVec4(45).ToColor(), Settings.FrameThickness);
             }
             else
             {
-                Graphics.DrawFrame(item.ClientRectangleCache, frameColor, Settings.FrameThickness);
+                Graphics.DrawFrame(drawRect, frameColor, Settings.FrameThickness);
             }
         }
 
         if (!IsStashVisible() || !Settings.EnableForStash)
             return;
 
-        foreach (var stashItem in GetFilteredStashItems())
+        var stashItems = GetFilteredStashItems().ToList();
+        var stashBounds = GetStashBounds();
+        if (stashBounds.Width <= 1 || stashBounds.Height <= 1)
+            stashBounds = BuildUnionRect(stashItems);
+        foreach (var stashItem in stashItems)
         {
             var frameColor = GetFilterColor(stashItem);
+            var itemRect = stashItem.ClientRectangleCache;
+            var drawRect = IntersectRect(itemRect, stashBounds);
+            if (drawRect.Width <= 1 || drawRect.Height <= 1)
+                continue;
             var hoverIntersects = hoveredItem != null && hoveredItem.Tooltip != null && stashItem?.Entity != null && hoveredItem.Entity != null &&
-                                  hoveredItem.Tooltip.GetClientRectCache.Intersects(stashItem.ClientRectangleCache) &&
+                                  hoveredItem.Tooltip.GetClientRectCache.Intersects(drawRect) &&
                                   hoveredItem.Entity.Address != stashItem.Entity.Address;
             if (hoverIntersects)
             {
-                Graphics.DrawFrame(stashItem.ClientRectangleCache, frameColor.Value.ToImguiVec4(45).ToColor(), Settings.FrameThickness);
+                Graphics.DrawFrame(drawRect, frameColor.Value.ToImguiVec4(45).ToColor(), Settings.FrameThickness);
             }
             else
             {
-                Graphics.DrawFrame(stashItem.ClientRectangleCache, frameColor, Settings.FrameThickness);
+                Graphics.DrawFrame(drawRect, frameColor, Settings.FrameThickness);
             }
         }
 
@@ -661,11 +690,13 @@ public class InvWithLinq : BaseSettingsPlugin<InvWithLinqSettings>
             {
                 // Apply the same preprocessing as real rules so Open* tokens are supported
                 var expr = Settings.FilterTest.Value;
-                var _ = TryExtractOpenCounts(expr, out var cleaned, out var minPref, out var minSuff);
+                var _ = TryExtractOpenCounts(expr, out var cleaned, out var minPref, out var minSuff, out var maxPref, out var maxSuff);
                 var filter = ItemFilter.LoadFromString(cleaned);
                 var itemCtx = new ItemData(hoveredItem.Entity, GameController);
-                var openOk = (minPref is null || ItemFilterUtils.OpenPrefixCount(itemCtx) >= minPref)
-                             && (minSuff is null || ItemFilterUtils.OpenSuffixCount(itemCtx) >= minSuff);
+                var openOk = (minPref is null || OpenPrefixCount(itemCtx) >= minPref)
+                             && (minSuff is null || OpenSuffixCount(itemCtx) >= minSuff)
+                             && (maxPref is null || OpenPrefixCount(itemCtx) <= maxPref)
+                             && (maxSuff is null || OpenSuffixCount(itemCtx) <= maxSuff);
                 var matched = openOk && filter.Matches(itemCtx);
                 DebugWindow.LogMsg($"{Name}: [Filter Test] Hovered Item: {matched}", 5);
             }
@@ -714,7 +745,7 @@ public class InvWithLinq : BaseSettingsPlugin<InvWithLinqSettings>
 
                     // Preprocess and compile with extra constraints support
                     var text = File.ReadAllText(fullPath);
-                    TryExtractOpenCounts(text, out var cleaned, out var minPref, out var minSuff);
+                    TryExtractOpenCounts(text, out var cleaned, out var minPref, out var minSuff, out var maxPref, out var maxSuff);
                     var filter = ItemFilter.LoadFromString(cleaned);
                     compiled.Add(new CompiledRule
                     {
@@ -722,6 +753,8 @@ public class InvWithLinq : BaseSettingsPlugin<InvWithLinqSettings>
                         RuleMeta = rule,
                         MinOpenPrefixes = minPref,
                         MinOpenSuffixes = minSuff,
+                        MaxOpenPrefixes = maxPref,
+                        MaxOpenSuffixes = maxSuff,
                     });
                 }
                 else
@@ -735,7 +768,7 @@ public class InvWithLinq : BaseSettingsPlugin<InvWithLinqSettings>
             {
                 var fullPath = Path.Combine(configDirectory, r.Location);
                 var text = File.Exists(fullPath) ? File.ReadAllText(fullPath) : string.Empty;
-                TryExtractOpenCounts(text, out var cleaned, out var minPref, out var minSuff);
+                TryExtractOpenCounts(text, out var cleaned, out var minPref, out var minSuff, out var maxPref, out var maxSuff);
                 var filter = ItemFilter.LoadFromString(cleaned);
                 newRules.Add(r);
                 compiled.Add(new CompiledRule
@@ -744,6 +777,8 @@ public class InvWithLinq : BaseSettingsPlugin<InvWithLinqSettings>
                     RuleMeta = r,
                     MinOpenPrefixes = minPref,
                     MinOpenSuffixes = minSuff,
+                    MaxOpenPrefixes = maxPref,
+                    MaxOpenSuffixes = maxSuff,
                 });
             }
 
@@ -760,51 +795,262 @@ public class InvWithLinq : BaseSettingsPlugin<InvWithLinqSettings>
     private static readonly Regex OpenPrefixRegex = new Regex(@"OpenPrefixCount\s*\(\)\s*(==|>=|<=|>|<)\s*(\d+)", RegexOptions.Compiled | RegexOptions.CultureInvariant);
     private static readonly Regex OpenSuffixRegex = new Regex(@"OpenSuffixCount\s*\(\)\s*(==|>=|<=|>|<)\s*(\d+)", RegexOptions.Compiled | RegexOptions.CultureInvariant);
 
-    private static bool TryExtractOpenCounts(string expr, out string cleanedExpr, out int? minPrefixes, out int? minSuffixes)
+    private static bool TryExtractOpenCounts(string expr, out string cleanedExpr, out int? minPrefixes, out int? minSuffixes, out int? maxPrefixes, out int? maxSuffixes)
     {
         int? localMinPrefixes = null;
         int? localMinSuffixes = null;
+        int? localMaxPrefixes = null;
+        int? localMaxSuffixes = null;
         var cleaned = NormalizeExpression(StripComments(expr ?? string.Empty));
 
         cleaned = OpenPrefixRegex.Replace(cleaned, m =>
         {
             var op = m.Groups[1].Value;
             var num = int.Parse(m.Groups[2].Value);
-            localMinPrefixes = MergeConstraint(localMinPrefixes, op, num);
+            MergeConstraint(ref localMinPrefixes, ref localMaxPrefixes, op, num);
             return "true"; // neutralize in expression
         });
         cleaned = OpenSuffixRegex.Replace(cleaned, m =>
         {
             var op = m.Groups[1].Value;
             var num = int.Parse(m.Groups[2].Value);
-            localMinSuffixes = MergeConstraint(localMinSuffixes, op, num);
+            MergeConstraint(ref localMinSuffixes, ref localMaxSuffixes, op, num);
             return "true";
         });
 
         cleanedExpr = cleaned;
         minPrefixes = localMinPrefixes;
         minSuffixes = localMinSuffixes;
-        return minPrefixes != null || minSuffixes != null;
+        maxPrefixes = localMaxPrefixes;
+        maxSuffixes = localMaxSuffixes;
+        return minPrefixes != null || minSuffixes != null || maxPrefixes != null || maxSuffixes != null;
     }
 
-    private static int? MergeConstraint(int? existing, string op, int value)
+    private static void MergeConstraint(ref int? minExisting, ref int? maxExisting, string op, int value)
     {
-        // We normalize to a minimum required open slots based on operator.
-        int threshold = op switch
+        switch (op)
         {
-            ">" => value + 1,
-            ">=" => value,
-            "==" => value,
-            "<" => int.MinValue, // not a useful min; will be ignored in check logic
-            "<=" => int.MinValue,
-            _ => value,
-        };
-        if (op == "==")
-        {
-            return value; // equality overrides
+            case ">":
+                minExisting = minExisting is null ? value + 1 : Math.Max(minExisting.Value, value + 1);
+                break;
+            case ">=":
+                minExisting = minExisting is null ? value : Math.Max(minExisting.Value, value);
+                break;
+            case "<":
+                maxExisting = maxExisting is null ? value - 1 : Math.Min(maxExisting.Value, value - 1);
+                break;
+            case "<=":
+                maxExisting = maxExisting is null ? value : Math.Min(maxExisting.Value, value);
+                break;
+            case "==":
+                minExisting = value;
+                maxExisting = value;
+                break;
+            default:
+                minExisting = minExisting is null ? value : Math.Max(minExisting.Value, value);
+                break;
         }
-        if (existing is null) return threshold;
-        return Math.Max(existing.Value, threshold);
+    }
+
+    // ===== Open affix support (aligned with NPCInvWithLinq) =====
+    private static int OpenPrefixCount(ItemData item)
+    {
+        var max = GetMaxAffixes(item);
+        var used = GetPrefixCount(item);
+        var open = max - used;
+        return open > 0 ? open : 0;
+    }
+
+    private static int OpenSuffixCount(ItemData item)
+    {
+        var max = GetMaxAffixes(item);
+        var used = GetSuffixCount(item);
+        var open = max - used;
+        return open > 0 ? open : 0;
+    }
+
+    private static Mods TryGetMods(ItemData item)
+    {
+        try
+        {
+            return item?.Entity?.GetComponent<Mods>();
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    private static int GetPrefixCount(ItemData item)
+    {
+        var mods = TryGetMods(item);
+        if (mods == null) return 0;
+        if (TryGetIntProperty(mods, out var v, "PrefixesCount", "PrefixCount", "NumPrefixes")) return v;
+        return CountAffixesByKind(mods, wantPrefix: true);
+    }
+
+    private static int GetSuffixCount(ItemData item)
+    {
+        var mods = TryGetMods(item);
+        if (mods == null) return 0;
+        if (TryGetIntProperty(mods, out var v, "SuffixesCount", "SuffixCount", "NumSuffixes")) return v;
+        return CountAffixesByKind(mods, wantPrefix: false);
+    }
+
+    private static int GetMaxAffixes(ItemData item)
+    {
+        var mods = TryGetMods(item);
+        if (mods == null) return 0;
+        return ComputeMaxByTagsAndRarity(item);
+    }
+
+    private static int CountAffixesByKind(Mods mods, bool wantPrefix)
+    {
+        try
+        {
+            var explicitMods = TryGetPropertyValue(mods, "ExplicitMods") as System.Collections.IEnumerable;
+            if (explicitMods == null) return 0;
+            int count = 0;
+            foreach (var m in explicitMods)
+            {
+                if (m == null) continue;
+                var modRecord = TryGetPropertyValue(m, "ModRecord");
+                if (modRecord != null)
+                {
+                    var affixTypeObj = TryGetPropertyValue(modRecord, "AffixType");
+                    if (affixTypeObj != null)
+                    {
+                        var text = affixTypeObj.ToString()?.ToLowerInvariant() ?? string.Empty;
+                        if (wantPrefix && text.Contains("prefix")) { count++; continue; }
+                        if (!wantPrefix && text.Contains("suffix")) { count++; continue; }
+                    }
+                }
+                if (TryGetBoolProperty(m, out var isPrefix, "IsPrefix") && wantPrefix && isPrefix) { count++; continue; }
+                if (TryGetBoolProperty(m, out var isSuffix, "IsSuffix") && !wantPrefix && isSuffix) { count++; continue; }
+                if (modRecord != null)
+                {
+                    var genType = TryGetPropertyValue(modRecord, "GenerationType");
+                    if (genType != null)
+                    {
+                        var t = genType.ToString()?.ToLowerInvariant() ?? string.Empty;
+                        if (wantPrefix && t.Contains("prefix")) { count++; continue; }
+                        if (!wantPrefix && t.Contains("suffix")) { count++; continue; }
+                    }
+                    if (TryGetIntProperty(modRecord, out var genId, "GenerationTypeId", "GenerationId", "GenType"))
+                    {
+                        if (wantPrefix && genId == 1) count++;
+                        else if (!wantPrefix && genId == 2) count++;
+                    }
+                }
+            }
+            return count;
+        }
+        catch { return 0; }
+    }
+
+    private static int ComputeMaxByTagsAndRarity(ItemData item)
+    {
+        var tags = GetItemTags(item);
+        int baseMax;
+        if (tags.Contains("flask")) baseMax = 1;
+        else if (tags.Contains("jewel") || tags.Contains("abyssjewel") || tags.Contains("clusterjewel")) baseMax = 2;
+        else baseMax = 3;
+        var mods = TryGetMods(item);
+        var rarity = GetRarityCode(mods);
+        switch (rarity)
+        {
+            case 0: return 0; // Normal
+            case 1: return Math.Min(baseMax, 1); // Magic
+            case 2: return baseMax; // Rare
+            case 3: return 0; // Unique
+            default: return baseMax;
+        }
+    }
+
+    private static int GetRarityCode(Mods mods)
+    {
+        if (mods == null) return -1;
+        if (TryGetIntProperty(mods, out var r, "ItemRarity", "Rarity")) return r;
+        var ro = TryGetPropertyValue(mods, "ItemRarity") ?? TryGetPropertyValue(mods, "Rarity");
+        var t = ro?.ToString()?.ToLowerInvariant();
+        return t switch { "normal" => 0, "magic" => 1, "rare" => 2, "unique" => 3, _ => -1 };
+    }
+
+    private static HashSet<string> GetItemTags(ItemData item)
+    {
+        var tags = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        if (item?.Entity == null || !item.Entity.IsValid)
+            return tags;
+        var path = item.Entity.Path ?? string.Empty;
+        if (string.IsNullOrEmpty(path)) return tags;
+        try
+        {
+            var baseComp = item.Entity.GetComponent<Base>();
+            if (baseComp != null)
+            {
+                var baseType = TryGetPropertyValue(baseComp, "ItemBase") ?? TryGetPropertyValue(baseComp, "BaseItemType") ?? (object)baseComp;
+                var t1 = TryGetPropertyValue(baseType, "Tags") as System.Collections.IEnumerable;
+                var t2 = TryGetPropertyValue(baseType, "MoreTagsFromPath") as System.Collections.IEnumerable;
+                AddStrings(tags, t1);
+                AddStrings(tags, t2);
+            }
+        }
+        catch { }
+        var lower = path.ToLowerInvariant();
+        if (lower.Contains("flask")) tags.Add("flask");
+        if (lower.Contains("jewel")) tags.Add("jewel");
+        if (lower.Contains("abyss")) tags.Add("abyssjewel");
+        if (lower.Contains("cluster")) tags.Add("clusterjewel");
+        return tags;
+    }
+
+    private static void AddStrings(HashSet<string> into, System.Collections.IEnumerable list)
+    {
+        if (list == null) return;
+        foreach (var o in list)
+        {
+            if (o is string s && !string.IsNullOrWhiteSpace(s)) into.Add(s);
+        }
+    }
+
+    private static bool TryGetIntProperty(object source, out int value, params string[] names)
+    {
+        value = 0;
+        if (source == null) return false;
+        foreach (var name in names)
+        {
+            var prop = source.GetType().GetProperty(name, System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.IgnoreCase);
+            if (prop == null) continue;
+            try
+            {
+                var raw = prop.GetValue(source);
+                if (raw is int i) { value = i; return true; }
+                if (raw is long l) { value = unchecked((int)l); return true; }
+                if (raw is short s) { value = s; return true; }
+                if (raw is byte b) { value = b; return true; }
+                if (raw is Enum e) { value = Convert.ToInt32(e); return true; }
+            }
+            catch { }
+        }
+        return false;
+    }
+
+    private static bool TryGetBoolProperty(object source, out bool value, params string[] names)
+    {
+        value = false;
+        if (source == null) return false;
+        foreach (var name in names)
+        {
+            var prop = source.GetType().GetProperty(name, System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.IgnoreCase);
+            if (prop == null) continue;
+            try
+            {
+                var raw = prop.GetValue(source);
+                if (raw is bool b) { value = b; return true; }
+            }
+            catch { }
+        }
+        return false;
     }
 
     private static string StripComments(string expr)
@@ -882,6 +1128,86 @@ public class InvWithLinq : BaseSettingsPlugin<InvWithLinqSettings>
             }
         }
         return Settings.DefaultFrameColor;
+    }
+
+    private RectangleF GetInventoryBounds()
+    {
+        try
+        {
+            var invPanel = GameController?.IngameState?.IngameUi?.InventoryPanel;
+            if (invPanel != null && invPanel.IsVisible)
+            {
+                return invPanel.GetClientRectCache;
+            }
+        }
+        catch { }
+        return default;
+    }
+
+    private RectangleF GetStashBounds()
+    {
+        try
+        {
+            var ui = GameController?.IngameState?.IngameUi;
+            if (ui?.StashElement?.IsVisible == true)
+            {
+                // Prefer the scroll/content region if available to avoid drawing over headers/footers
+                var content = TryGetPropertyValue(ui.StashElement, "InventoryPanel") as Element
+                              ?? TryGetPropertyValue(ui.StashElement, "VisibleStash") as Element
+                              ?? ui.StashElement;
+                return content.GetClientRectCache;
+            }
+            if (ui?.GuildStashElement?.IsVisible == true)
+            {
+                var content = TryGetPropertyValue(ui.GuildStashElement, "InventoryPanel") as Element
+                              ?? TryGetPropertyValue(ui.GuildStashElement, "VisibleStash") as Element
+                              ?? ui.GuildStashElement;
+                return content.GetClientRectCache;
+            }
+        }
+        catch { }
+        return default;
+    }
+
+    private static RectangleF IntersectRect(RectangleF a, RectangleF b)
+    {
+        if (a.Width <= 0 || a.Height <= 0 || b.Width <= 0 || b.Height <= 0)
+            return default;
+        var left = Math.Max(a.X, b.X);
+        var top = Math.Max(a.Y, b.Y);
+        var right = Math.Min(a.Right, b.Right);
+        var bottom = Math.Min(a.Bottom, b.Bottom);
+        if (right <= left || bottom <= top)
+            return default;
+        return new RectangleF
+        {
+            X = left,
+            Y = top,
+            Width = right - left,
+            Height = bottom - top,
+        };
+    }
+
+    private static RectangleF BuildUnionRect(IEnumerable<CustomItemData> items)
+    {
+        float left = float.MaxValue, top = float.MaxValue, right = float.MinValue, bottom = float.MinValue;
+        bool any = false;
+        foreach (var it in items)
+        {
+            try
+            {
+                var r = it.ClientRectangleCache;
+                if (r.Width <= 0 || r.Height <= 0) continue;
+                if (r.X < left) left = r.X;
+                if (r.Y < top) top = r.Y;
+                if (r.Right > right) right = r.Right;
+                if (r.Bottom > bottom) bottom = r.Bottom;
+                any = true;
+            }
+            catch { }
+        }
+        if (!any || right <= left || bottom <= top) return default;
+        return new RectangleF { X = left, Y = top, Width = right - left, Height = bottom - top };
     }
 
     private static T? TryGetRef<T>(Func<T> getter) where T : class
