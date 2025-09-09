@@ -1221,9 +1221,4 @@ public class InvWithLinq : BaseSettingsPlugin<InvWithLinqSettings>
             return null;
         }
     }
-
-    //private int SumItemStats(params int[] itemStats)
-    //{
-    //    return itemStats.Sum();
-    //}
 }
