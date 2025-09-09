@@ -473,9 +473,8 @@ public class InvWithLinq : BaseSettingsPlugin<InvWithLinqSettings>
                     var stats = imod.ModRecord.StatNames;
                     if (stats == null)
                         continue;
-#pragma warning disable CA1860
+
                     foreach (var stat in stats)
-#pragma warning restore CA1860
                     {
                         if (stat == null)
                             continue;
@@ -539,9 +538,8 @@ public class InvWithLinq : BaseSettingsPlugin<InvWithLinqSettings>
                     var stats = pmod.ModRecord?.StatNames;
                     if (stats == null)
                         continue;
-#pragma warning disable CA1860
+
                     foreach (var stat in stats)
-#pragma warning restore CA1860
                     {
                         if (stat == null)
                             continue;
@@ -563,9 +561,8 @@ public class InvWithLinq : BaseSettingsPlugin<InvWithLinqSettings>
                     var stats = smod.ModRecord?.StatNames;
                     if (stats == null)
                         continue;
-#pragma warning disable CA1860
+
                     foreach (var stat in stats)
-#pragma warning restore CA1860
                     {
                         if (stat == null)
                             continue;
@@ -790,71 +787,6 @@ public class InvWithLinq : BaseSettingsPlugin<InvWithLinqSettings>
         {
             DebugWindow.LogError($"{Name}: Filter Load Error.\n{e}", 15);
         }
-    }
-
-    // moved to FilterPreProcessing.cs
-
-
-    private static string StripComments(string expr)
-    {
-        if (string.IsNullOrEmpty(expr)) return string.Empty;
-        var sb = new System.Text.StringBuilder(expr.Length);
-        bool inString = false;
-        bool inBlock = false;
-        for (int i = 0; i < expr.Length; i++)
-        {
-            char c = expr[i];
-            char next = i + 1 < expr.Length ? expr[i + 1] : '\0';
-            if (!inString && !inBlock && c == '/' && next == '/')
-            {
-                while (i < expr.Length && expr[i] != '\n') i++;
-                continue;
-            }
-            if (!inString && !inBlock && c == '/' && next == '*')
-            {
-                inBlock = true; i++;
-                continue;
-            }
-            if (inBlock)
-            {
-                if (c == '*' && next == '/') { inBlock = false; i++; }
-                continue;
-            }
-            if (c == '"')
-            {
-                bool escaped = i > 0 && expr[i - 1] == '\\';
-                if (!escaped) inString = !inString;
-                sb.Append(c);
-                continue;
-            }
-            sb.Append(c);
-        }
-        return sb.ToString();
-    }
-
-    private static string NormalizeExpression(string expr)
-    {
-        if (string.IsNullOrWhiteSpace(expr)) return string.Empty;
-        var nl = expr.Replace("\r\n", "\n").Replace('\r', '\n');
-        var lines = nl.Split('\n');
-        var sb = new System.Text.StringBuilder(nl.Length + 32);
-        bool firstWritten = false;
-        for (int i = 0; i < lines.Length; i++)
-        {
-            var raw = lines[i];
-            var line = raw.Trim();
-            if (line.Length == 0) continue;
-            if (firstWritten)
-            {
-                bool startsWithOp = line.StartsWith("&&") || line.StartsWith("||") || line.StartsWith(")") || line.StartsWith("]") || line.StartsWith(",") || line.StartsWith("}") || line.StartsWith(".");
-                char last = sb.Length > 0 ? sb[sb.Length - 1] : '\0';
-                bool prevOpener = last == '(' || last == '{' || last == '[' || last == ',' || last == '&' || last == '|';
-                if (!startsWithOp && !prevOpener) sb.Append(" || "); else sb.Append(' ');
-            }
-            sb.Append(line);
-            firstWritten = true;
-        }
-        return sb.ToString();
     }
 
     private ColorNode GetFilterColor(CustomItemData item)
