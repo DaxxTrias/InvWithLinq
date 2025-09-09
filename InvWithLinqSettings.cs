@@ -62,8 +62,10 @@ public class InvWithLinqSettings : ISettings
             if (ImGui.Button("Open rule folder"))
             {
                 var configDir = plugin.ConfigDirectory;
-                var customConfigFileDirectory = !string.IsNullOrEmpty(_parent.CustomConfigDirectory)
-                    ? Path.Combine(Path.GetDirectoryName(plugin.ConfigDirectory), _parent.CustomConfigDirectory)
+                var baseDir = Path.GetDirectoryName(plugin.ConfigDirectory) ?? plugin.ConfigDirectory ?? string.Empty;
+                var customFolder = _parent.CustomConfigDirectory?.Value;
+                var customConfigFileDirectory = !string.IsNullOrWhiteSpace(customFolder)
+                    ? Path.Combine(baseDir, customFolder)
                     : null;
 
                 var directoryToOpen = Directory.Exists(customConfigFileDirectory)
