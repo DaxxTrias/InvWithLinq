@@ -690,7 +690,7 @@ public class InvWithLinq : BaseSettingsPlugin<InvWithLinqSettings>
             {
                 // Apply the same preprocessing as real rules so Open* tokens are supported
                 var expr = Settings.FilterTest.Value;
-                var _ = TryExtractOpenCounts(expr, out var cleaned, out var minPref, out var minSuff, out var maxPref, out var maxSuff);
+                var _ = FilterPreProcessing.TryExtractOpenCounts(expr, out var cleaned, out var minPref, out var minSuff, out var maxPref, out var maxSuff);
                 var filter = ItemFilter.LoadFromString(cleaned);
                 var itemCtx = new ItemData(hoveredItem.Entity, GameController);
                 var openOk = (minPref is null || OpenPrefixCount(itemCtx) >= minPref)
@@ -745,7 +745,7 @@ public class InvWithLinq : BaseSettingsPlugin<InvWithLinqSettings>
 
                     // Preprocess and compile with extra constraints support
                     var text = File.ReadAllText(fullPath);
-                    TryExtractOpenCounts(text, out var cleaned, out var minPref, out var minSuff, out var maxPref, out var maxSuff);
+                    FilterPreProcessing.TryExtractOpenCounts(text, out var cleaned, out var minPref, out var minSuff, out var maxPref, out var maxSuff);
                     var filter = ItemFilter.LoadFromString(cleaned);
                     compiled.Add(new CompiledRule
                     {
@@ -768,7 +768,7 @@ public class InvWithLinq : BaseSettingsPlugin<InvWithLinqSettings>
             {
                 var fullPath = Path.Combine(configDirectory, r.Location);
                 var text = File.Exists(fullPath) ? File.ReadAllText(fullPath) : string.Empty;
-                TryExtractOpenCounts(text, out var cleaned, out var minPref, out var minSuff, out var maxPref, out var maxSuff);
+                FilterPreProcessing.TryExtractOpenCounts(text, out var cleaned, out var minPref, out var minSuff, out var maxPref, out var maxSuff);
                 var filter = ItemFilter.LoadFromString(cleaned);
                 newRules.Add(r);
                 compiled.Add(new CompiledRule
@@ -792,65 +792,7 @@ public class InvWithLinq : BaseSettingsPlugin<InvWithLinqSettings>
         }
     }
 
-    private static readonly Regex OpenPrefixRegex = new Regex(@"OpenPrefixCount\s*\(\)\s*(==|>=|<=|>|<)\s*(\d+)", RegexOptions.Compiled | RegexOptions.CultureInvariant);
-    private static readonly Regex OpenSuffixRegex = new Regex(@"OpenSuffixCount\s*\(\)\s*(==|>=|<=|>|<)\s*(\d+)", RegexOptions.Compiled | RegexOptions.CultureInvariant);
-
-    private static bool TryExtractOpenCounts(string expr, out string cleanedExpr, out int? minPrefixes, out int? minSuffixes, out int? maxPrefixes, out int? maxSuffixes)
-    {
-        int? localMinPrefixes = null;
-        int? localMinSuffixes = null;
-        int? localMaxPrefixes = null;
-        int? localMaxSuffixes = null;
-        var cleaned = NormalizeExpression(StripComments(expr ?? string.Empty));
-
-        cleaned = OpenPrefixRegex.Replace(cleaned, m =>
-        {
-            var op = m.Groups[1].Value;
-            var num = int.Parse(m.Groups[2].Value);
-            MergeConstraint(ref localMinPrefixes, ref localMaxPrefixes, op, num);
-            return "true"; // neutralize in expression
-        });
-        cleaned = OpenSuffixRegex.Replace(cleaned, m =>
-        {
-            var op = m.Groups[1].Value;
-            var num = int.Parse(m.Groups[2].Value);
-            MergeConstraint(ref localMinSuffixes, ref localMaxSuffixes, op, num);
-            return "true";
-        });
-
-        cleanedExpr = cleaned;
-        minPrefixes = localMinPrefixes;
-        minSuffixes = localMinSuffixes;
-        maxPrefixes = localMaxPrefixes;
-        maxSuffixes = localMaxSuffixes;
-        return minPrefixes != null || minSuffixes != null || maxPrefixes != null || maxSuffixes != null;
-    }
-
-    private static void MergeConstraint(ref int? minExisting, ref int? maxExisting, string op, int value)
-    {
-        switch (op)
-        {
-            case ">":
-                minExisting = minExisting is null ? value + 1 : Math.Max(minExisting.Value, value + 1);
-                break;
-            case ">=":
-                minExisting = minExisting is null ? value : Math.Max(minExisting.Value, value);
-                break;
-            case "<":
-                maxExisting = maxExisting is null ? value - 1 : Math.Min(maxExisting.Value, value - 1);
-                break;
-            case "<=":
-                maxExisting = maxExisting is null ? value : Math.Min(maxExisting.Value, value);
-                break;
-            case "==":
-                minExisting = value;
-                maxExisting = value;
-                break;
-            default:
-                minExisting = minExisting is null ? value : Math.Max(minExisting.Value, value);
-                break;
-        }
-    }
+    // moved to FilterPreProcessing.cs
 
     // ===== Open affix support (aligned with NPCInvWithLinq) =====
     private static int OpenPrefixCount(ItemData item)
