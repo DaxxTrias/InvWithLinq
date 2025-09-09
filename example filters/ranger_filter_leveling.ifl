@@ -6,7 +6,7 @@
 (
   HasTag("Boot") &&
   (
-    PlayerInfo.Level >= 65  && // Mapping
+    PlayerInfo.Level >= 35  && // Mapping
     (
       new [] {
         ItemStats[GameStat.BaseMaximumLife] >= 100,
@@ -16,7 +16,7 @@
         ItemStats[GameStat.BaseChaosDamageResistancePct] >= 10,
         ItemStats[GameStat.BaseResistAllElementsPct] >= 10,
         ItemStats[GameStat.BaseMovementVelocityPct] >= 10,
-      }.Count(x => x) >= 3
+      }.Count(x => x) >= 2
     )
   )
 )
@@ -27,7 +27,7 @@
 (
   HasTag("Ring") &&
   (
-    PlayerInfo.Level >= 65  && // Mapping
+    PlayerInfo.Level >= 35  && // Mapping
     (
       new [] {
         ItemStats[GameStat.BaseMaximumLife] >= 100,
@@ -41,7 +41,7 @@
         ItemStats[GameStat.AttackMinimumAddedColdDamage] >= 6,
         ItemStats[GameStat.AttackMinimumAddedFireDamage] >= 5,
         ItemStats[GameStat.AttackMinimumAddedLightningDamage] >= 1,
-      }.Count(x => x) >= 3
+      }.Count(x => x) >= 2
     )
   )
 )
@@ -51,7 +51,7 @@
 (
   HasTag("Belt") &&
   (
-    PlayerInfo.Level >= 65  && // Mapping
+    PlayerInfo.Level >= 35  && // Mapping
     (
       new [] {
         ItemStats[GameStat.BaseMaximumLife] >= 70,
@@ -62,7 +62,7 @@
         ItemStats[GameStat.BaseResistAllElementsPct] >= 10,
         ItemStats[GameStat.BaseItemFoundRarityPct] >= 7,
         ItemStats[GameStat.LocalCharmSlots] >= 1,
-      }.Count(x => x) >= 3
+      }.Count(x => x) >= 2
     )
   )
 )
@@ -72,7 +72,7 @@
 (
   HasTag("Amulet") &&
   (
-    PlayerInfo.Level >= 65  && // Mapping
+    PlayerInfo.Level >= 35  && // Mapping
     (
       new [] {
         ItemStats[GameStat.BaseMaximumLife] >= 100,
@@ -84,7 +84,7 @@
         ItemStats[GameStat.BaseItemFoundRarityPct] >= 7,
         ItemStats[GameStat.BaseSpiritFromEquipment] >= 7,
         ItemStats[GameStat.CriticalStrikeChancePct] >= 15,
-      }.Count(x => x) >= 3
+      }.Count(x => x) >= 2
     )
   )
 )
@@ -94,7 +94,7 @@
 (
   HasTag("Glove") &&
   (
-    PlayerInfo.Level >= 65  && // Mapping
+    PlayerInfo.Level >= 35  && // Mapping
     (
       new [] {
         ItemStats[GameStat.BaseMaximumLife] >= 100,
@@ -108,7 +108,7 @@
         ItemStats[GameStat.AttackMinimumAddedColdDamage] >= 6,
         ItemStats[GameStat.AttackMinimumAddedFireDamage] >= 5,
         ItemStats[GameStat.AttackMinimumAddedLightningDamage] >= 1,
-      }.Count(x => x) >= 3
+      }.Count(x => x) >= 2
     )
   )
 )
@@ -118,7 +118,7 @@
 (
   HasTag("Helm") &&
   (
-    PlayerInfo.Level >= 65  && // Mapping
+    PlayerInfo.Level >= 35  && // Mapping
     (
       new [] {
         ItemStats[GameStat.BaseMaximumLife] >= 100,
@@ -129,7 +129,7 @@
         ItemStats[GameStat.BaseResistAllElementsPct] >= 10,
         ItemStats[GameStat.BaseItemFoundRarityPct] >= 1,
         ItemStats[GameStat.BaseSpiritFromEquipment] >= 1,
-      }.Count(x => x) >= 3
+      }.Count(x => x) >= 2
     )
   )
 )
@@ -139,7 +139,7 @@
 (
   HasTag("Quiver") &&
   (
-    PlayerInfo.Level >= 65  && // Mapping
+    PlayerInfo.Level >= 35  && // Mapping
     (
       new [] {
         ItemStats[GameStat.BaseMaximumLife] >= 100,
@@ -160,7 +160,7 @@
         ItemStats[GameStat.BaseChanceToPiercePct]>=18,
         //ItemStats[GameStat.AttackCriticalStrikeChancePct]>=25,
         //ItemStats[GameStat.AttackCriticalStrikeMultiplier]>=10,
-      }.Count(x => x) >= 3
+      }.Count(x => x) >= 2
     )
   )
 )
@@ -170,7 +170,7 @@
 (
   HasTag("Body_Armour") &&
   (
-    PlayerInfo.Level >= 65  && // Mapping
+    PlayerInfo.Level >= 35  && // Mapping
     (
       new [] {
         ItemStats[GameStat.BaseMaximumLife] >= 100,
@@ -180,7 +180,7 @@
         ItemStats[GameStat.BaseChaosDamageResistancePct] >= 10,
         ItemStats[GameStat.BaseResistAllElementsPct] >= 10,
         ItemStats[GameStat.BaseSpiritFromEquipment] >= 1,
-      }.Count(x => x) >= 3
+      }.Count(x => x) >= 2
     )
   )
 )
@@ -190,7 +190,7 @@
 (
   HasTag("Bow") &&
   (
-    PlayerInfo.Level >= 65  && // Mapping
+    PlayerInfo.Level >= 35  && // Mapping
     (
       new [] {
         ItemStats[GameStat.LocalMinimumAddedColdDamage] >= 17,
@@ -202,7 +202,7 @@
         ItemStats[GameStat.LocalPhysicalDamagePct]>=120,
         ItemStats[GameStat.ProjectileSkillGemLevel]>=2,
         ItemStats[GameStat.LocalCriticalStrikeChance]>=200,
-      }.Count(x => x) >= 3
+      }.Count(x => x) >= 2
     ) 
   )
 )
