@@ -19,7 +19,7 @@ namespace InvWithLinq
         // Returns how many prefix slots are available on the item (clamped to >= 0)
         public static int OpenPrefixCount(ItemData item)
         {
-            var max = GetMaxPrefixes(item);
+            var max = GetMaxAffixes(item);
             var used = GetPrefixCount(item);
             var open = max - used;
             return open > 0 ? open : 0;
@@ -28,7 +28,7 @@ namespace InvWithLinq
         // Returns how many suffix slots are available on the item (clamped to >= 0)
         public static int OpenSuffixCount(ItemData item)
         {
-            var max = GetMaxSuffixes(item);
+            var max = GetMaxAffixes(item);
             var used = GetSuffixCount(item);
             var open = max - used;
             return open > 0 ? open : 0;
@@ -147,6 +147,82 @@ namespace InvWithLinq
             catch
             {
                 return 0;
+            }
+        }
+
+        // Compute the maximum number of prefixes/suffixes per item based on tags and rarity
+        private static int GetMaxAffixes(ItemData item)
+        {
+            var mods = TryGetMods(item);
+            if (mods == null)
+                return 0;
+
+            return ComputeMaxByTagsAndRarity(item);
+        }
+
+        private static int ComputeMaxByTagsAndRarity(ItemData item)
+        {
+            var tags = GetItemTags(item);
+            int baseMax;
+            if (tags.Contains("flask")) baseMax = 1;
+            else if (tags.Contains("jewel") || tags.Contains("abyssjewel") || tags.Contains("clusterjewel")) baseMax = 2;
+            else baseMax = 3;
+
+            var mods = TryGetMods(item);
+            var rarity = GetRarityCode(mods);
+            switch (rarity)
+            {
+                case 0: return 0; // Normal
+                case 1: return Math.Min(baseMax, 1); // Magic
+                case 2: return baseMax; // Rare
+                case 3: return 0; // Unique
+                default: return baseMax;
+            }
+        }
+
+        private static int GetRarityCode(Mods? mods)
+        {
+            if (mods == null) return -1;
+            if (TryGetIntProperty(mods, out var r, "ItemRarity", "Rarity")) return r;
+            var ro = GetPropertyValue(mods, "ItemRarity") ?? GetPropertyValue(mods, "Rarity");
+            var t = ro?.ToString()?.ToLowerInvariant();
+            return t switch { "normal" => 0, "magic" => 1, "rare" => 2, "unique" => 3, _ => -1 };
+        }
+
+        private static System.Collections.Generic.HashSet<string> GetItemTags(ItemData item)
+        {
+            var tags = new System.Collections.Generic.HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            if (item?.Entity == null || !item.Entity.IsValid)
+                return tags;
+            var path = item.Entity.Path ?? string.Empty;
+            if (string.IsNullOrEmpty(path)) return tags;
+            try
+            {
+                var baseComp = item.Entity.GetComponent<Base>();
+                if (baseComp != null)
+                {
+                    var baseType = GetPropertyValue(baseComp, "ItemBase") ?? GetPropertyValue(baseComp, "BaseItemType") ?? (object)baseComp;
+                    var t1 = GetPropertyValue(baseType, "Tags") as System.Collections.IEnumerable;
+                    var t2 = GetPropertyValue(baseType, "MoreTagsFromPath") as System.Collections.IEnumerable;
+                    AddStrings(tags, t1);
+                    AddStrings(tags, t2);
+                }
+            }
+            catch { }
+            var lower = path.ToLowerInvariant();
+            if (lower.Contains("flask")) tags.Add("flask");
+            if (lower.Contains("jewel")) tags.Add("jewel");
+            if (lower.Contains("abyss")) tags.Add("abyssjewel");
+            if (lower.Contains("cluster")) tags.Add("clusterjewel");
+            return tags;
+        }
+
+        private static void AddStrings(System.Collections.Generic.HashSet<string> into, System.Collections.IEnumerable? list)
+        {
+            if (list == null) return;
+            foreach (var o in list)
+            {
+                if (o is string s && !string.IsNullOrWhiteSpace(s)) into.Add(s);
             }
         }
 

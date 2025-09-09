@@ -24,14 +24,14 @@ public class InvWithLinq : BaseSettingsPlugin<InvWithLinqSettings>
 {
     private readonly TimeCache<List<CustomItemData>> _inventItems;
     private readonly TimeCache<List<CustomItemData>> _stashItems;
-    private List<ItemFilter> _itemFilters;
-    private List<CompiledRule> _compiledRules;
+    private List<ItemFilter>? _itemFilters;
+    private List<CompiledRule>? _compiledRules;
     private readonly List<string> ItemDebug = [];
 
     private sealed class CompiledRule
     {
         public required ItemFilter Filter { get; init; }
-        public InvRule RuleMeta { get; init; }
+        public required InvRule RuleMeta { get; init; }
         public int? MinOpenPrefixes { get; init; }
         public int? MinOpenSuffixes { get; init; }
         public int? MaxOpenPrefixes { get; init; }
@@ -61,22 +61,22 @@ public class InvWithLinq : BaseSettingsPlugin<InvWithLinqSettings>
         var ok = true;
         if (rule.MinOpenPrefixes is int pReq)
         {
-            ok &= OpenPrefixCount(item) >= pReq;
+            ok &= ItemFilterUtils.OpenPrefixCount(item) >= pReq;
             if (!ok) return false;
         }
         if (rule.MaxOpenPrefixes is int pMax)
         {
-            ok &= OpenPrefixCount(item) <= pMax;
+            ok &= ItemFilterUtils.OpenPrefixCount(item) <= pMax;
             if (!ok) return false;
         }
         if (rule.MinOpenSuffixes is int sReq)
         {
-            ok &= OpenSuffixCount(item) >= sReq;
+            ok &= ItemFilterUtils.OpenSuffixCount(item) >= sReq;
             if (!ok) return false;
         }
         if (rule.MaxOpenSuffixes is int sMax)
         {
-            ok &= OpenSuffixCount(item) <= sMax;
+            ok &= ItemFilterUtils.OpenSuffixCount(item) <= sMax;
         }
         return ok;
     }
@@ -92,7 +92,7 @@ public class InvWithLinq : BaseSettingsPlugin<InvWithLinqSettings>
             // Use raw enumeration for dumps to avoid skipping items due to new/unknown mods or hidden UI.
             var items = GetInventoryItemsRaw();
 
-            if (items == null || items.Count == 0)
+            if (items.Count == 0)
             {
                 DebugWindow.LogMsg($"{Name}: No inventory items found to dump.", 5);
             }
@@ -296,7 +296,7 @@ public class InvWithLinq : BaseSettingsPlugin<InvWithLinqSettings>
 
     private void AddItemsFromInventory(Inventory inventory, List<CustomItemData> items)
     {
-        var stashItems = TryGetRef(() => inventory?.VisibleInventoryItems);
+        var stashItems = TryGetRef(() => inventory?.VisibleInventoryItems as System.Collections.Generic.IList<ExileCore2.PoEMemory.Elements.InventoryElements.NormalInventoryItem>);
         if (stashItems == null)
             return;
 
@@ -407,7 +407,7 @@ public class InvWithLinq : BaseSettingsPlugin<InvWithLinqSettings>
                     continue;
             }
 
-            var safeItem = TryGetRef(() => new CustomItemData(item.Item, GameController, item.GetClientRect()));
+            var safeItem = TryGetRef(() => new CustomItemData(item.Item, GameController!, item.GetClientRect()));
             if (safeItem != null)
             {
                 inventoryItems.Add(safeItem);
@@ -432,7 +432,7 @@ public class InvWithLinq : BaseSettingsPlugin<InvWithLinqSettings>
             if (item?.Item == null || item.Address == 0)
                 continue;
 
-            var safeItem = TryGetRef(() => new CustomItemData(item.Item, GameController));
+            var safeItem = TryGetRef(() => new CustomItemData(item.Item, GameController!));
             if (safeItem != null)
             {
                 inventoryItems.Add(safeItem);
@@ -582,7 +582,7 @@ public class InvWithLinq : BaseSettingsPlugin<InvWithLinqSettings>
         return affixes;
     }
 
-    private Element GetHoveredItem()
+    private Element? GetHoveredItem()
     {
         var hover = GameController?.IngameState?.UIHover;
         if (hover == null || hover.Address == 0)
@@ -682,7 +682,7 @@ public class InvWithLinq : BaseSettingsPlugin<InvWithLinqSettings>
         });
     }
 
-    private void PerformItemFilterTest(Element hoveredItem)
+    private void PerformItemFilterTest(Element? hoveredItem)
     {
         if (Settings.FilterTest.Value is { Length: > 0 } && hoveredItem != null)
         {
@@ -693,10 +693,10 @@ public class InvWithLinq : BaseSettingsPlugin<InvWithLinqSettings>
                 var _ = FilterPreProcessing.TryExtractOpenCounts(expr, out var cleaned, out var minPref, out var minSuff, out var maxPref, out var maxSuff);
                 var filter = ItemFilter.LoadFromString(cleaned);
                 var itemCtx = new ItemData(hoveredItem.Entity, GameController);
-                var openOk = (minPref is null || OpenPrefixCount(itemCtx) >= minPref)
-                             && (minSuff is null || OpenSuffixCount(itemCtx) >= minSuff)
-                             && (maxPref is null || OpenPrefixCount(itemCtx) <= maxPref)
-                             && (maxSuff is null || OpenSuffixCount(itemCtx) <= maxSuff);
+                var openOk = (minPref is null || ItemFilterUtils.OpenPrefixCount(itemCtx) >= minPref)
+                             && (minSuff is null || ItemFilterUtils.OpenSuffixCount(itemCtx) >= minSuff)
+                             && (maxPref is null || ItemFilterUtils.OpenPrefixCount(itemCtx) <= maxPref)
+                             && (maxSuff is null || ItemFilterUtils.OpenSuffixCount(itemCtx) <= maxSuff);
                 var matched = openOk && filter.Matches(itemCtx);
                 DebugWindow.LogMsg($"{Name}: [Filter Test] Hovered Item: {matched}", 5);
             }
@@ -794,206 +794,6 @@ public class InvWithLinq : BaseSettingsPlugin<InvWithLinqSettings>
 
     // moved to FilterPreProcessing.cs
 
-    // ===== Open affix support (aligned with NPCInvWithLinq) =====
-    private static int OpenPrefixCount(ItemData item)
-    {
-        var max = GetMaxAffixes(item);
-        var used = GetPrefixCount(item);
-        var open = max - used;
-        return open > 0 ? open : 0;
-    }
-
-    private static int OpenSuffixCount(ItemData item)
-    {
-        var max = GetMaxAffixes(item);
-        var used = GetSuffixCount(item);
-        var open = max - used;
-        return open > 0 ? open : 0;
-    }
-
-    private static Mods TryGetMods(ItemData item)
-    {
-        try
-        {
-            return item?.Entity?.GetComponent<Mods>();
-        }
-        catch
-        {
-            return null;
-        }
-    }
-
-    private static int GetPrefixCount(ItemData item)
-    {
-        var mods = TryGetMods(item);
-        if (mods == null) return 0;
-        if (TryGetIntProperty(mods, out var v, "PrefixesCount", "PrefixCount", "NumPrefixes")) return v;
-        return CountAffixesByKind(mods, wantPrefix: true);
-    }
-
-    private static int GetSuffixCount(ItemData item)
-    {
-        var mods = TryGetMods(item);
-        if (mods == null) return 0;
-        if (TryGetIntProperty(mods, out var v, "SuffixesCount", "SuffixCount", "NumSuffixes")) return v;
-        return CountAffixesByKind(mods, wantPrefix: false);
-    }
-
-    private static int GetMaxAffixes(ItemData item)
-    {
-        var mods = TryGetMods(item);
-        if (mods == null) return 0;
-        return ComputeMaxByTagsAndRarity(item);
-    }
-
-    private static int CountAffixesByKind(Mods mods, bool wantPrefix)
-    {
-        try
-        {
-            var explicitMods = TryGetPropertyValue(mods, "ExplicitMods") as System.Collections.IEnumerable;
-            if (explicitMods == null) return 0;
-            int count = 0;
-            foreach (var m in explicitMods)
-            {
-                if (m == null) continue;
-                var modRecord = TryGetPropertyValue(m, "ModRecord");
-                if (modRecord != null)
-                {
-                    var affixTypeObj = TryGetPropertyValue(modRecord, "AffixType");
-                    if (affixTypeObj != null)
-                    {
-                        var text = affixTypeObj.ToString()?.ToLowerInvariant() ?? string.Empty;
-                        if (wantPrefix && text.Contains("prefix")) { count++; continue; }
-                        if (!wantPrefix && text.Contains("suffix")) { count++; continue; }
-                    }
-                }
-                if (TryGetBoolProperty(m, out var isPrefix, "IsPrefix") && wantPrefix && isPrefix) { count++; continue; }
-                if (TryGetBoolProperty(m, out var isSuffix, "IsSuffix") && !wantPrefix && isSuffix) { count++; continue; }
-                if (modRecord != null)
-                {
-                    var genType = TryGetPropertyValue(modRecord, "GenerationType");
-                    if (genType != null)
-                    {
-                        var t = genType.ToString()?.ToLowerInvariant() ?? string.Empty;
-                        if (wantPrefix && t.Contains("prefix")) { count++; continue; }
-                        if (!wantPrefix && t.Contains("suffix")) { count++; continue; }
-                    }
-                    if (TryGetIntProperty(modRecord, out var genId, "GenerationTypeId", "GenerationId", "GenType"))
-                    {
-                        if (wantPrefix && genId == 1) count++;
-                        else if (!wantPrefix && genId == 2) count++;
-                    }
-                }
-            }
-            return count;
-        }
-        catch { return 0; }
-    }
-
-    private static int ComputeMaxByTagsAndRarity(ItemData item)
-    {
-        var tags = GetItemTags(item);
-        int baseMax;
-        if (tags.Contains("flask")) baseMax = 1;
-        else if (tags.Contains("jewel") || tags.Contains("abyssjewel") || tags.Contains("clusterjewel")) baseMax = 2;
-        else baseMax = 3;
-        var mods = TryGetMods(item);
-        var rarity = GetRarityCode(mods);
-        switch (rarity)
-        {
-            case 0: return 0; // Normal
-            case 1: return Math.Min(baseMax, 1); // Magic
-            case 2: return baseMax; // Rare
-            case 3: return 0; // Unique
-            default: return baseMax;
-        }
-    }
-
-    private static int GetRarityCode(Mods mods)
-    {
-        if (mods == null) return -1;
-        if (TryGetIntProperty(mods, out var r, "ItemRarity", "Rarity")) return r;
-        var ro = TryGetPropertyValue(mods, "ItemRarity") ?? TryGetPropertyValue(mods, "Rarity");
-        var t = ro?.ToString()?.ToLowerInvariant();
-        return t switch { "normal" => 0, "magic" => 1, "rare" => 2, "unique" => 3, _ => -1 };
-    }
-
-    private static HashSet<string> GetItemTags(ItemData item)
-    {
-        var tags = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        if (item?.Entity == null || !item.Entity.IsValid)
-            return tags;
-        var path = item.Entity.Path ?? string.Empty;
-        if (string.IsNullOrEmpty(path)) return tags;
-        try
-        {
-            var baseComp = item.Entity.GetComponent<Base>();
-            if (baseComp != null)
-            {
-                var baseType = TryGetPropertyValue(baseComp, "ItemBase") ?? TryGetPropertyValue(baseComp, "BaseItemType") ?? (object)baseComp;
-                var t1 = TryGetPropertyValue(baseType, "Tags") as System.Collections.IEnumerable;
-                var t2 = TryGetPropertyValue(baseType, "MoreTagsFromPath") as System.Collections.IEnumerable;
-                AddStrings(tags, t1);
-                AddStrings(tags, t2);
-            }
-        }
-        catch { }
-        var lower = path.ToLowerInvariant();
-        if (lower.Contains("flask")) tags.Add("flask");
-        if (lower.Contains("jewel")) tags.Add("jewel");
-        if (lower.Contains("abyss")) tags.Add("abyssjewel");
-        if (lower.Contains("cluster")) tags.Add("clusterjewel");
-        return tags;
-    }
-
-    private static void AddStrings(HashSet<string> into, System.Collections.IEnumerable list)
-    {
-        if (list == null) return;
-        foreach (var o in list)
-        {
-            if (o is string s && !string.IsNullOrWhiteSpace(s)) into.Add(s);
-        }
-    }
-
-    private static bool TryGetIntProperty(object source, out int value, params string[] names)
-    {
-        value = 0;
-        if (source == null) return false;
-        foreach (var name in names)
-        {
-            var prop = source.GetType().GetProperty(name, System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.IgnoreCase);
-            if (prop == null) continue;
-            try
-            {
-                var raw = prop.GetValue(source);
-                if (raw is int i) { value = i; return true; }
-                if (raw is long l) { value = unchecked((int)l); return true; }
-                if (raw is short s) { value = s; return true; }
-                if (raw is byte b) { value = b; return true; }
-                if (raw is Enum e) { value = Convert.ToInt32(e); return true; }
-            }
-            catch { }
-        }
-        return false;
-    }
-
-    private static bool TryGetBoolProperty(object source, out bool value, params string[] names)
-    {
-        value = false;
-        if (source == null) return false;
-        foreach (var name in names)
-        {
-            var prop = source.GetType().GetProperty(name, System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.IgnoreCase);
-            if (prop == null) continue;
-            try
-            {
-                var raw = prop.GetValue(source);
-                if (raw is bool b) { value = b; return true; }
-            }
-            catch { }
-        }
-        return false;
-    }
 
     private static string StripComments(string expr)
     {
@@ -1152,7 +952,7 @@ public class InvWithLinq : BaseSettingsPlugin<InvWithLinqSettings>
         return new RectangleF { X = left, Y = top, Width = right - left, Height = bottom - top };
     }
 
-    private static T? TryGetRef<T>(Func<T> getter) where T : class
+    private static T? TryGetRef<T>(Func<T?> getter) where T : class
     {
         try
         {
