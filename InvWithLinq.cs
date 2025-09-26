@@ -175,35 +175,87 @@ public class InvWithLinq : BaseSettingsPlugin<InvWithLinqSettings>
     {
         var hoveredItem = GetHoveredItem();
 
-        if (!IsInventoryVisible())
-            return;
-
-        var invItems = GetFilteredInvItems().ToList();
-        var invBounds = GetInventoryBounds();
-        if (invBounds.Width <= 1 || invBounds.Height <= 1)
-            invBounds = BuildUnionRect(invItems);
-        foreach (var item in invItems)
+        if (IsInventoryVisible())
         {
-            var frameColor = GetFilterColor(item);
-            var itemRect = item.ClientRectangleCache;
-            var drawRect = IntersectRect(itemRect, invBounds);
-            if (drawRect.Width <= 1 || drawRect.Height <= 1)
-                continue;
-            var hoverIntersects = hoveredItem != null && hoveredItem.Tooltip != null && item?.Entity != null && hoveredItem.Entity != null &&
-                                  hoveredItem.Tooltip.GetClientRectCache.Intersects(drawRect) &&
-                                  hoveredItem.Entity.Address != item.Entity.Address;
-            if (hoverIntersects)
+            var invItems = GetFilteredInvItems().ToList();
+            var invBounds = GetInventoryBounds();
+            if (invBounds.Width <= 1 || invBounds.Height <= 1)
+                invBounds = BuildUnionRect(invItems);
+            foreach (var item in invItems)
             {
-                Graphics.DrawFrame(drawRect, frameColor.Value.ToImguiVec4(45).ToColor(), Settings.FrameThickness);
-            }
-            else
-            {
-                Graphics.DrawFrame(drawRect, frameColor, Settings.FrameThickness);
+                var frameColor = GetFilterColor(item);
+                var itemRect = item.ClientRectangleCache;
+                var drawRect = IntersectRect(itemRect, invBounds);
+                if (drawRect.Width <= 1 || drawRect.Height <= 1)
+                    continue;
+					var hoverIntersects = hoveredItem != null && hoveredItem.Tooltip != null && item?.Entity != null && hoveredItem.Entity != null &&
+											  hoveredItem.Tooltip.GetClientRectCache.Intersects(drawRect) &&
+											  hoveredItem.Entity.Address != item.Entity.Address;
+                if (hoverIntersects)
+                {
+                    Graphics.DrawFrame(drawRect, frameColor.Value.ToImguiVec4(45).ToColor(), Settings.FrameThickness);
+                }
+                else
+                {
+                    Graphics.DrawFrame(drawRect, frameColor, Settings.FrameThickness);
+                }
             }
         }
 
+		// Also scan additional panels before stash early-return
+		try
+		{
+			var (offItems, offPanel) = GetOfflineMerchantPanelItems();
+			if (offPanel != null && offItems.Count > 0)
+			{
+				var filtered = ApplyFilters(offItems).ToList();
+				if (filtered.Count > 0)
+				{
+					var panelBounds = offPanel.GetClientRectCache;
+					if (panelBounds.Width <= 1 || panelBounds.Height <= 1)
+						panelBounds = BuildUnionRect(filtered);
+					foreach (var item in filtered)
+					{
+						var frameColor = GetFilterColor(item);
+						var drawRect = IntersectRect(item.ClientRectangleCache, panelBounds);
+						if (drawRect.Width <= 1 || drawRect.Height <= 1)
+							continue;
+						var hoverIntersects = hoveredItem != null && hoveredItem.Tooltip != null && item?.Entity != null && hoveredItem.Entity != null &&
+											  hoveredItem.Tooltip.GetClientRectCache.Intersects(drawRect) &&
+											  hoveredItem.Entity.Address != item.Entity.Address;
+						Graphics.DrawFrame(drawRect, hoverIntersects ? frameColor.Value.ToImguiVec4(45).ToColor() : frameColor, Settings.FrameThickness);
+					}
+				}
+			}
+		}
+		catch { }
+
+		try
+		{
+			var (leftItems, leftPanel) = GetOpenLeftRelicLockerItems();
+			if (leftPanel != null && leftItems.Count > 0)
+			{
+				var filtered = ApplyFilters(leftItems).ToList();
+				if (filtered.Count > 0)
+				{
+					foreach (var item in filtered)
+					{
+						var frameColor = GetFilterColor(item);
+					var drawRect = item.ClientRectangleCache;
+						if (drawRect.Width <= 1 || drawRect.Height <= 1)
+							continue;
+						var hoverIntersects = hoveredItem != null && hoveredItem.Tooltip != null && item?.Entity != null && hoveredItem.Entity != null &&
+											  hoveredItem.Tooltip.GetClientRectCache.Intersects(drawRect) &&
+											  hoveredItem.Entity.Address != item.Entity.Address;
+						Graphics.DrawFrame(drawRect, hoverIntersects ? frameColor.Value.ToImguiVec4(45).ToColor() : frameColor, Settings.FrameThickness);
+					}
+				}
+			}
+		}
+		catch { }
+
         if (!IsStashVisible() || !Settings.EnableForStash)
-            return;
+            goto AfterStash;
 
         var stashItems = GetFilteredStashItems().ToList();
         var stashBounds = GetStashBounds();
@@ -229,6 +281,7 @@ public class InvWithLinq : BaseSettingsPlugin<InvWithLinqSettings>
             }
         }
 
+    AfterStash:
         PerformItemFilterTest(hoveredItem);
     }
     
@@ -373,6 +426,237 @@ public class InvWithLinq : BaseSettingsPlugin<InvWithLinqSettings>
             }
         }
         return null;
+    }
+
+    private static List<ExileCore2.PoEMemory.Elements.InventoryElements.NormalInventoryItem>? TryGetNormalInventoryItemsFromProperties(object source, params string[] propertyNames)
+    {
+        foreach (var name in propertyNames)
+        {
+            try
+            {
+                var val = TryGetPropertyValue(source, name);
+                if (val is System.Collections.IEnumerable enumerable)
+                {
+                    var list = new List<ExileCore2.PoEMemory.Elements.InventoryElements.NormalInventoryItem>();
+                    foreach (var obj in enumerable)
+                    {
+                        if (obj is ExileCore2.PoEMemory.Elements.InventoryElements.NormalInventoryItem nii && nii != null)
+                        {
+                            list.Add(nii);
+                        }
+                    }
+                    if (list.Count > 0)
+                        return list;
+                }
+            }
+            catch
+            {
+            }
+        }
+        return null;
+    }
+
+    private static bool PanelContainsText(Element? root, string needle)
+    {
+        if (root == null || string.IsNullOrEmpty(needle))
+            return false;
+        try
+        {
+            var stack = new Stack<Element>();
+            stack.Push(root);
+            int visited = 0;
+            while (stack.Count > 0 && visited < 2048)
+            {
+                visited++;
+                var cur = stack.Pop();
+                var t = cur?.Text;
+                if (!string.IsNullOrEmpty(t) && t.IndexOf(needle, StringComparison.OrdinalIgnoreCase) >= 0)
+                    return true;
+                var children = cur?.Children;
+                if (children != null)
+                {
+                    for (int i = 0; i < children.Count; i++)
+                    {
+                        var ch = children[i];
+                        if (ch != null && ch.Address != 0)
+                            stack.Push(ch);
+                    }
+                }
+            }
+        }
+        catch { }
+        return false;
+    }
+
+    private void CollectItemsFromPanel(Element panel, List<CustomItemData> items)
+    {
+        if (panel == null || panel.Address == 0)
+            return;
+
+        try
+        {
+            if (TryGetPropertyValue(panel, "Inventory") is Inventory invSingle && invSingle != null)
+            {
+                AddItemsFromInventory(invSingle, items);
+            }
+        }
+        catch { }
+
+        var candidates = new List<object?>
+        {
+            panel,
+            TryGetPropertyValue(panel, "InventoryPanel"),
+            TryGetPropertyValue(panel, "VisibleStash"),
+        };
+
+        foreach (var candidate in candidates)
+        {
+            if (candidate == null) continue;
+
+            var inventories = TryGetInventoriesFromProperties(candidate, "Inventories", "VisibleInventories", "NestedVisibleInventory", "VisibleStash");
+            if (inventories != null)
+            {
+                foreach (var inv in inventories)
+                {
+                    if (inv != null)
+                        AddItemsFromInventory(inv, items);
+                }
+            }
+
+			var normalItems = TryGetNormalInventoryItemsFromProperties(candidate, "VisibleInventoryItems", "YourOfferItems", "OtherOfferItems", "Items", "InventorySlotItems");
+            if (normalItems != null)
+            {
+                foreach (var slotItem in normalItems)
+                {
+                    try
+                    {
+                        if (slotItem == null || slotItem.Address == 0 || slotItem.Item == null)
+                            continue;
+                        var rect = slotItem.GetClientRectCache;
+                        var safeItem = TryGetRef(() => new CustomItemData(slotItem.Item!, GameController, rect));
+                        if (safeItem != null)
+                            items.Add(safeItem);
+                    }
+                    catch { }
+                }
+            }
+
+			// Fallback: deep traversal to find NormalInventoryItem descendants
+			if (candidate is Element element)
+			{
+                // max depth is 4 to avoid going too deep into the UI tree
+				CollectNormalInventoryItemsFromDescendants(element, items, 4, 4096);
+			}
+        }
+    }
+
+	private void CollectNormalInventoryItemsFromDescendants(Element root, List<CustomItemData> items, int maxDepth = 6, int maxNodes = 4096)
+	{
+		if (root == null || root.Address == 0)
+			return;
+		try
+		{
+			var stack = new Stack<(Element el, int depth)>();
+			stack.Push((root, 0));
+			int visited = 0;
+			while (stack.Count > 0 && visited < maxNodes)
+			{
+				var (el, depth) = stack.Pop();
+				visited++;
+				if (el == null || el.Address == 0)
+					continue;
+
+				// Try direct cast to NormalInventoryItem
+				var nii = el as ExileCore2.PoEMemory.Elements.InventoryElements.NormalInventoryItem;
+				if (nii != null)
+				{
+					try
+					{
+						if (nii.Item != null && nii.Item.Address != 0)
+						{
+							var rect = nii.GetClientRectCache;
+							var safeItem = TryGetRef(() => new CustomItemData(nii.Item!, GameController, rect));
+							if (safeItem != null)
+								items.Add(safeItem);
+						}
+					}
+					catch { }
+				}
+				else
+				{
+					// Reflective fallback: any element exposing an Entity via known property names
+					try
+					{
+						Entity? maybeEntity = null;
+						foreach (var pname in new[] { "Item", "Entity", "ItemEntity" })
+						{
+							maybeEntity = TryGetPropertyValue(el, pname) as Entity;
+							if (maybeEntity != null && maybeEntity.Address != 0)
+								break;
+						}
+						if (maybeEntity != null && maybeEntity.Address != 0)
+						{
+							var rect = el.GetClientRectCache;
+							var safeItem = TryGetRef(() => new CustomItemData(maybeEntity, GameController, rect));
+							if (safeItem != null)
+								items.Add(safeItem);
+						}
+					}
+					catch { }
+				}
+
+				if (depth >= maxDepth)
+					continue;
+					var children = el.Children;
+				if (children != null)
+				{
+					for (int i = 0; i < children.Count; i++)
+					{
+							var ch = children[i];
+							if (ch != null && ch.Address != 0 && ch.IsVisible)
+							stack.Push((ch, depth + 1));
+					}
+				}
+			}
+		}
+		catch { }
+	}
+
+    private (List<CustomItemData> items, Element? panel) GetOfflineMerchantPanelItems()
+    {
+        var list = new List<CustomItemData>();
+        try
+        {
+            var ui = GameController?.IngameState?.IngameUi;
+            if (ui == null) return (list, null);
+            var panel = TryGetPropertyValue(ui, "OfflineMerchantPanel") as Element;
+            if (panel == null || !panel.IsValid || !panel.IsVisible)
+                return (list, null);
+            CollectItemsFromPanel(panel, list);
+            return (list, panel);
+        }
+        catch { }
+        return (list, null);
+    }
+
+    private (List<CustomItemData> items, Element? panel) GetOpenLeftRelicLockerItems()
+    {
+        var list = new List<CustomItemData>();
+        try
+        {
+            var panel = GameController?.IngameState?.IngameUi?.OpenLeftPanel
+                        ?? TryGetPropertyValue(GameController?.IngameState?.IngameUi!, "OpenLeftPanel") as Element;
+            if (panel == null || panel.Address == 0 || !panel.IsValid || !panel.IsVisible)
+                return (list, null);
+
+            if (!PanelContainsText(panel, "Relic Locker"))
+                return (list, null);
+
+            CollectItemsFromPanel(panel, list);
+            return (list, panel);
+        }
+        catch { }
+        return (list, null);
     }
 
     private List<CustomItemData> GetInventoryItems()
@@ -649,6 +933,42 @@ public class InvWithLinq : BaseSettingsPlugin<InvWithLinqSettings>
         var items = _stashItems.Value;
         var rules = Settings.InvRules;
         return items.Where(item =>
+        {
+            try
+            {
+                for (int i = 0; i < rules.Count; i++)
+                {
+                    if (!rules[i].Enabled)
+                        continue;
+
+                    if (_compiledRules != null && i < _compiledRules.Count && _compiledRules[i] != null)
+                    {
+                        var cr = _compiledRules[i];
+                        if (!ExtraOpenAffixConstraintsPass(item, cr))
+                            continue;
+                        if (cr.Filter.Matches(item))
+                            return true;
+                    }
+                    else if (_itemFilters != null && i < _itemFilters.Count)
+                    {
+                        if (_itemFilters[i].Matches(item))
+                            return true;
+                    }
+                }
+                return false;
+            }
+            finally
+            {
+            }
+        });
+    }
+
+    private IEnumerable<CustomItemData> ApplyFilters(IEnumerable<CustomItemData> source)
+    {
+        if ((_compiledRules == null || _compiledRules.Count == 0) && (_itemFilters == null || _itemFilters.Count == 0) || Settings?.InvRules == null)
+            return Array.Empty<CustomItemData>();
+        var rules = Settings.InvRules;
+        return source.Where(item =>
         {
             try
             {
