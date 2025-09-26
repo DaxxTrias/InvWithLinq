@@ -202,33 +202,7 @@ public class InvWithLinq : BaseSettingsPlugin<InvWithLinqSettings>
             }
         }
 
-		// Also scan additional panels before stash early-return
-		try
-		{
-			var (offItems, offPanel) = GetOfflineMerchantPanelItems();
-			if (offPanel != null && offItems.Count > 0)
-			{
-				var filtered = ApplyFilters(offItems).ToList();
-				if (filtered.Count > 0)
-				{
-					var panelBounds = offPanel.GetClientRectCache;
-					if (panelBounds.Width <= 1 || panelBounds.Height <= 1)
-						panelBounds = BuildUnionRect(filtered);
-					foreach (var item in filtered)
-					{
-						var frameColor = GetFilterColor(item);
-						var drawRect = IntersectRect(item.ClientRectangleCache, panelBounds);
-						if (drawRect.Width <= 1 || drawRect.Height <= 1)
-							continue;
-						var hoverIntersects = hoveredItem != null && hoveredItem.Tooltip != null && item?.Entity != null && hoveredItem.Entity != null &&
-											  hoveredItem.Tooltip.GetClientRectCache.Intersects(drawRect) &&
-											  hoveredItem.Entity.Address != item.Entity.Address;
-						Graphics.DrawFrame(drawRect, hoverIntersects ? frameColor.Value.ToImguiVec4(45).ToColor() : frameColor, Settings.FrameThickness);
-					}
-				}
-			}
-		}
-		catch { }
+		// OfflineMerchantPanel drawing moved to NPCInvWithLinq
 
 		try
 		{
@@ -622,22 +596,6 @@ public class InvWithLinq : BaseSettingsPlugin<InvWithLinqSettings>
 		catch { }
 	}
 
-    private (List<CustomItemData> items, Element? panel) GetOfflineMerchantPanelItems()
-    {
-        var list = new List<CustomItemData>();
-        try
-        {
-            var ui = GameController?.IngameState?.IngameUi;
-            if (ui == null) return (list, null);
-            var panel = TryGetPropertyValue(ui, "OfflineMerchantPanel") as Element;
-            if (panel == null || !panel.IsValid || !panel.IsVisible)
-                return (list, null);
-            CollectItemsFromPanel(panel, list);
-            return (list, panel);
-        }
-        catch { }
-        return (list, null);
-    }
 
     private (List<CustomItemData> items, Element? panel) GetOpenLeftRelicLockerItems()
     {
