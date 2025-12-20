@@ -334,6 +334,10 @@ public class InvWithLinq : BaseSettingsPlugin<InvWithLinqSettings>
 
             var itemEntity = slotItem.Item;
 
+            // Validate entity before creating ItemData
+            if (!IsEntityValidForItemData(itemEntity))
+                continue;
+
             var rect = slotItem.GetClientRectCache;
             var safeItem = TryGetRef(() => new CustomItemData(itemEntity, GameController, rect));
             if (safeItem != null)
@@ -506,6 +510,11 @@ public class InvWithLinq : BaseSettingsPlugin<InvWithLinqSettings>
                     {
                         if (slotItem == null || slotItem.Address == 0 || slotItem.Item == null)
                             continue;
+
+                        // Validate entity before creating ItemData
+                        if (!IsEntityValidForItemData(slotItem.Item))
+                            continue;
+
                         var rect = slotItem.GetClientRectCache;
                         var safeItem = TryGetRef(() => new CustomItemData(slotItem.Item!, GameController, rect));
                         if (safeItem != null)
@@ -548,6 +557,10 @@ public class InvWithLinq : BaseSettingsPlugin<InvWithLinqSettings>
 					{
 						if (nii.Item != null && nii.Item.Address != 0)
 						{
+							// Validate entity before creating ItemData
+							if (!IsEntityValidForItemData(nii.Item))
+								continue;
+
 							var rect = nii.GetClientRectCache;
 							var safeItem = TryGetRef(() => new CustomItemData(nii.Item!, GameController, rect));
 							if (safeItem != null)
@@ -570,6 +583,10 @@ public class InvWithLinq : BaseSettingsPlugin<InvWithLinqSettings>
 						}
 						if (maybeEntity != null && maybeEntity.Address != 0)
 						{
+							// Validate entity before creating ItemData
+							if (!IsEntityValidForItemData(maybeEntity))
+								continue;
+
 							var rect = el.GetClientRectCache;
 							var safeItem = TryGetRef(() => new CustomItemData(maybeEntity, GameController, rect));
 							if (safeItem != null)
@@ -635,21 +652,32 @@ public class InvWithLinq : BaseSettingsPlugin<InvWithLinqSettings>
             if (item?.Item == null || item.Address == 0)
                 continue;
 
-            var metadata = item.Item.Path;
+            var itemEntity = item.Item;
+            var metadata = itemEntity.Path;
             var isCurrencyOrQuest = !string.IsNullOrEmpty(metadata) && (
                 metadata.StartsWith("Metadata/Items/Currency/", StringComparison.OrdinalIgnoreCase) ||
                 metadata.StartsWith("Metadata/Items/QuestItems/", StringComparison.OrdinalIgnoreCase));
 
-            var modsComp = item.Item.GetComponent<Mods>();
-
-            // For non-currency/quest items, require valid explicit mods as before
+            // For currency/quest items, we use a more lenient validation
+            // For regular items, we require valid explicit mods
             if (!isCurrencyOrQuest)
             {
-                if (modsComp?.ExplicitMods == null || modsComp.ExplicitMods.Count == 0 || modsComp.ExplicitMods.Any(m => m?.ModRecord == null))
+                var modsComp = itemEntity.GetComponent<Mods>();
+                if (modsComp?.ExplicitMods == null || modsComp.ExplicitMods.Count == 0)
+                    continue;
+
+                // Validate that the mods component won't cause ItemFilterLibrary to throw
+                if (!IsModsComponentValid(modsComp))
+                    continue;
+            }
+            else
+            {
+                // Even for currency/quest items, validate if Mods component exists
+                if (!IsEntityValidForItemData(itemEntity))
                     continue;
             }
 
-            var safeItem = TryGetRef(() => new CustomItemData(item.Item, GameController!, item.GetClientRect()));
+            var safeItem = TryGetRef(() => new CustomItemData(itemEntity, GameController!, item.GetClientRect()));
             if (safeItem != null)
             {
                 inventoryItems.Add(safeItem);
@@ -856,25 +884,36 @@ public class InvWithLinq : BaseSettingsPlugin<InvWithLinqSettings>
                     if (!rules[i].Enabled)
                         continue;
 
-                    // Prefer compiled rules with extra constraints when available
-                    if (_compiledRules != null && i < _compiledRules.Count && _compiledRules[i] != null)
+                    try
                     {
-                        var cr = _compiledRules[i];
-                        if (!ExtraOpenAffixConstraintsPass(item, cr))
-                            continue;
-                        if (cr.Filter.Matches(item))
-                            return true;
+                        // Prefer compiled rules with extra constraints when available
+                        if (_compiledRules != null && i < _compiledRules.Count && _compiledRules[i] != null)
+                        {
+                            var cr = _compiledRules[i];
+                            if (!ExtraOpenAffixConstraintsPass(item, cr))
+                                continue;
+                            if (cr.Filter.Matches(item))
+                                return true;
+                        }
+                        else if (_itemFilters != null && i < _itemFilters.Count)
+                        {
+                            if (_itemFilters[i].Matches(item))
+                                return true;
+                        }
                     }
-                    else if (_itemFilters != null && i < _itemFilters.Count)
+                    catch
                     {
-                        if (_itemFilters[i].Matches(item))
-                            return true;
+                        // Silently skip items that cause filter evaluation errors
+                        // This catches exceptions from ItemFilterLibrary even if validation missed something
+                        // The item will simply not be highlighted rather than crashing the plugin
+                        continue;
                     }
                 }
                 return false;
             }
-            finally
+            catch
             {
+                return false;
             }
         });
     }
@@ -899,24 +938,35 @@ public class InvWithLinq : BaseSettingsPlugin<InvWithLinqSettings>
                     if (!rules[i].Enabled)
                         continue;
 
-                    if (_compiledRules != null && i < _compiledRules.Count && _compiledRules[i] != null)
+                    try
                     {
-                        var cr = _compiledRules[i];
-                        if (!ExtraOpenAffixConstraintsPass(item, cr))
-                            continue;
-                        if (cr.Filter.Matches(item))
-                            return true;
+                        if (_compiledRules != null && i < _compiledRules.Count && _compiledRules[i] != null)
+                        {
+                            var cr = _compiledRules[i];
+                            if (!ExtraOpenAffixConstraintsPass(item, cr))
+                                continue;
+                            if (cr.Filter.Matches(item))
+                                return true;
+                        }
+                        else if (_itemFilters != null && i < _itemFilters.Count)
+                        {
+                            if (_itemFilters[i].Matches(item))
+                                return true;
+                        }
                     }
-                    else if (_itemFilters != null && i < _itemFilters.Count)
+                    catch
                     {
-                        if (_itemFilters[i].Matches(item))
-                            return true;
+                        // Silently skip items that cause filter evaluation errors
+                        // This catches exceptions from ItemFilterLibrary even if validation missed something
+                        // The item will simply not be highlighted rather than crashing the plugin
+                        continue;
                     }
                 }
                 return false;
             }
-            finally
+            catch
             {
+                return false;
             }
         });
     }
@@ -935,24 +985,35 @@ public class InvWithLinq : BaseSettingsPlugin<InvWithLinqSettings>
                     if (!rules[i].Enabled)
                         continue;
 
-                    if (_compiledRules != null && i < _compiledRules.Count && _compiledRules[i] != null)
+                    try
                     {
-                        var cr = _compiledRules[i];
-                        if (!ExtraOpenAffixConstraintsPass(item, cr))
-                            continue;
-                        if (cr.Filter.Matches(item))
-                            return true;
+                        if (_compiledRules != null && i < _compiledRules.Count && _compiledRules[i] != null)
+                        {
+                            var cr = _compiledRules[i];
+                            if (!ExtraOpenAffixConstraintsPass(item, cr))
+                                continue;
+                            if (cr.Filter.Matches(item))
+                                return true;
+                        }
+                        else if (_itemFilters != null && i < _itemFilters.Count)
+                        {
+                            if (_itemFilters[i].Matches(item))
+                                return true;
+                        }
                     }
-                    else if (_itemFilters != null && i < _itemFilters.Count)
+                    catch
                     {
-                        if (_itemFilters[i].Matches(item))
-                            return true;
+                        // Silently skip items that cause filter evaluation errors
+                        // This catches exceptions from ItemFilterLibrary even if validation missed something
+                        // The item will simply not be highlighted rather than crashing the plugin
+                        continue;
                     }
                 }
                 return false;
             }
-            finally
+            catch
             {
+                return false;
             }
         });
     }
@@ -1160,6 +1221,83 @@ public class InvWithLinq : BaseSettingsPlugin<InvWithLinqSettings>
         }
         if (!any || right <= left || bottom <= top) return default;
         return new RectangleF { X = left, Y = top, Width = right - left, Height = bottom - top };
+    }
+
+    /// <summary>
+    /// Validates an entity to ensure it won't cause exceptions in ItemFilterLibrary.
+    /// Checks the Mods component if it exists for null ItemMod entries.
+    /// </summary>
+    private static bool IsEntityValidForItemData(Entity? entity)
+    {
+        if (entity == null || entity.Address == 0)
+            return false;
+
+        try
+        {
+            // Check if entity has a Mods component
+            if (!entity.TryGetComponent<Mods>(out var modsComp))
+            {
+                // No Mods component is fine (e.g., currency items)
+                return true;
+            }
+
+            // If Mods component exists, validate it thoroughly
+            return IsModsComponentValid(modsComp);
+        }
+        catch
+        {
+            // If any validation throws, consider invalid
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// Validates a Mods component to ensure it won't cause NullReferenceException in ItemFilterLibrary.
+    /// Checks for null ItemMod entries in all mod collections.
+    /// </summary>
+    private static bool IsModsComponentValid(Mods? modsComp)
+    {
+        if (modsComp == null)
+            return false;
+
+        try
+        {
+            // Check all mod collections for null entries or null ModRecords
+            // This prevents ItemFilterLibrary.ModsData constructor from throwing NullReferenceException
+            // The critical issue is in ModsData.Prefixes/Suffixes where ExplicitMods.Where(m => m.ModRecord.AffixType...)
+            // will throw if any ItemMod in the collection is null
+            var modCollections = new[]
+            {
+                modsComp.ItemMods,
+                modsComp.ExplicitMods,
+                modsComp.ImplicitMods,
+                modsComp.EnchantedMods,
+                modsComp.CorruptionImplicitMods,
+                modsComp.SynthesisMods
+            };
+
+            foreach (var collection in modCollections)
+            {
+                if (collection == null)
+                    continue;
+
+                // Check if collection contains any null ItemMod or ItemMod with null ModRecord
+                foreach (var mod in collection)
+                {
+                    if (mod == null || mod.ModRecord == null)
+                        return false;
+                }
+            }
+
+            // Note: ExplicitMods can be empty (valid for currency, white items, etc.)
+            // We only check that if it exists, it doesn't contain null entries
+            return true;
+        }
+        catch
+        {
+            // If any access throws (e.g., memory read issues), consider invalid
+            return false;
+        }
     }
 
     private static T? TryGetRef<T>(Func<T?> getter) where T : class
