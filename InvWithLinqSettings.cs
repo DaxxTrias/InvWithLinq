@@ -26,6 +26,9 @@ public class InvWithLinqSettings : ISettings
     public ColorNode DefaultFrameColor { get; set; } = new ColorNode(Color.Red);
     public RangeNode<int> FrameThickness { get; set; } = new RangeNode<int>(1, 1, 20);
 
+    [Menu("Enable Debug Logging for Inventory Detection")]
+    public ToggleNode EnableDebugLogging { get; set; } = new ToggleNode(false);
+
     [JsonIgnore]
     public TextNode FilterTest { get; set; } = new TextNode();
     

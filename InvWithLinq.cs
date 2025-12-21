@@ -215,7 +215,7 @@ public class InvWithLinq : BaseSettingsPlugin<InvWithLinqSettings>
 					foreach (var item in filtered)
 					{
 						var frameColor = GetFilterColor(item);
-					var drawRect = item.ClientRectangleCache;
+						var drawRect = item.ClientRectangleCache;
 						if (drawRect.Width <= 1 || drawRect.Height <= 1)
 							continue;
 						var hoverIntersects = hoveredItem != null && hoveredItem.Tooltip != null && item?.Entity != null && hoveredItem.Entity != null &&
@@ -466,7 +466,8 @@ public class InvWithLinq : BaseSettingsPlugin<InvWithLinqSettings>
         return false;
     }
 
-    private void CollectItemsFromPanel(Element panel, List<CustomItemData> items)
+
+    private void CollectItemsFromPanel(Element panel, List<CustomItemData> items, bool enableDebugLogging = false)
     {
         if (panel == null || panel.Address == 0)
             return;
@@ -555,7 +556,7 @@ public class InvWithLinq : BaseSettingsPlugin<InvWithLinqSettings>
 				{
 					try
 					{
-						if (nii.Item != null && nii.Item.Address != 0)
+						if (nii.Item != null && nii.Item.Address != 0 && nii.Item.IsValid)
 						{
 							// Validate entity before creating ItemData
 							if (!IsEntityValidForItemData(nii.Item))
@@ -563,7 +564,7 @@ public class InvWithLinq : BaseSettingsPlugin<InvWithLinqSettings>
 
 							var rect = nii.GetClientRectCache;
 							var safeItem = TryGetRef(() => new CustomItemData(nii.Item!, GameController, rect));
-							if (safeItem != null)
+							if (safeItem != null && safeItem.Entity?.IsValid == true)
 								items.Add(safeItem);
 						}
 					}
@@ -581,7 +582,7 @@ public class InvWithLinq : BaseSettingsPlugin<InvWithLinqSettings>
 							if (maybeEntity != null && maybeEntity.Address != 0)
 								break;
 						}
-						if (maybeEntity != null && maybeEntity.Address != 0)
+						if (maybeEntity != null && maybeEntity.Address != 0 && maybeEntity.IsValid)
 						{
 							// Validate entity before creating ItemData
 							if (!IsEntityValidForItemData(maybeEntity))
@@ -589,7 +590,7 @@ public class InvWithLinq : BaseSettingsPlugin<InvWithLinqSettings>
 
 							var rect = el.GetClientRectCache;
 							var safeItem = TryGetRef(() => new CustomItemData(maybeEntity, GameController, rect));
-							if (safeItem != null)
+							if (safeItem != null && safeItem.Entity?.IsValid == true)
 								items.Add(safeItem);
 						}
 					}
@@ -598,16 +599,41 @@ public class InvWithLinq : BaseSettingsPlugin<InvWithLinqSettings>
 
 				if (depth >= maxDepth)
 					continue;
-					var children = el.Children;
-				if (children != null)
+
+				// Traverse children - be more lenient with IsVisible check for relic locker
+				try
 				{
-					for (int i = 0; i < children.Count; i++)
+					var children = el.Children;
+					if (children != null)
 					{
-							var ch = children[i];
-							if (ch != null && ch.Address != 0 && ch.IsVisible)
-							stack.Push((ch, depth + 1));
+						for (int i = 0; i < children.Count; i++)
+						{
+							try
+							{
+								var ch = children[i];
+								// For deeply nested items, check IsVisible but don't fail if the check throws
+								if (ch != null && ch.Address != 0)
+								{
+									bool shouldTraverse = true;
+									try
+									{
+										shouldTraverse = ch.IsVisible;
+									}
+									catch
+									{
+										// If IsVisible throws, assume true and traverse anyway
+										shouldTraverse = true;
+									}
+
+									if (shouldTraverse)
+										stack.Push((ch, depth + 1));
+								}
+							}
+							catch { }
+						}
 					}
 				}
+				catch { }
 			}
 		}
 		catch { }
@@ -621,7 +647,23 @@ public class InvWithLinq : BaseSettingsPlugin<InvWithLinqSettings>
         {
             var panel = GameController?.IngameState?.IngameUi?.OpenLeftPanel
                         ?? TryGetPropertyValue(GameController?.IngameState?.IngameUi!, "OpenLeftPanel") as Element;
+            
             if (panel == null || panel.Address == 0 || !panel.IsValid || !panel.IsVisible)
+                return (list, null);
+
+            // Check if panel has children (relic locker should have 3 children)
+            int childCount = 0;
+            try
+            {
+                childCount = panel.Children?.Count ?? 0;
+            }
+            catch
+            {
+                return (list, null);
+            }
+
+            // If panel has no children yet, it's still loading - skip this frame
+            if (childCount == 0)
                 return (list, null);
 
             if (!PanelContainsText(panel, "Relic Locker"))
@@ -630,7 +672,10 @@ public class InvWithLinq : BaseSettingsPlugin<InvWithLinqSettings>
             CollectItemsFromPanel(panel, list);
             return (list, panel);
         }
-        catch { }
+        catch
+        {
+            // Silently handle exceptions during relic locker detection
+        }
         return (list, null);
     }
 
@@ -980,6 +1025,10 @@ public class InvWithLinq : BaseSettingsPlugin<InvWithLinqSettings>
         {
             try
             {
+                // Skip items with invalid entities early
+                if (item == null || item.Entity?.IsValid != true)
+                    return false;
+
                 for (int i = 0; i < rules.Count; i++)
                 {
                     if (!rules[i].Enabled)
@@ -990,7 +1039,7 @@ public class InvWithLinq : BaseSettingsPlugin<InvWithLinqSettings>
                         if (_compiledRules != null && i < _compiledRules.Count && _compiledRules[i] != null)
                         {
                             var cr = _compiledRules[i];
-                            if (!ExtraOpenAffixConstraintsPass(item, cr))
+                            if (!ExtraOpenAffixConstraintsPass(item!, cr))
                                 continue;
                             if (cr.Filter.Matches(item))
                                 return true;
@@ -1004,8 +1053,6 @@ public class InvWithLinq : BaseSettingsPlugin<InvWithLinqSettings>
                     catch
                     {
                         // Silently skip items that cause filter evaluation errors
-                        // This catches exceptions from ItemFilterLibrary even if validation missed something
-                        // The item will simply not be highlighted rather than crashing the plugin
                         continue;
                     }
                 }
