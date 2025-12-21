@@ -45,6 +45,13 @@ public class InvWithLinq : BaseSettingsPlugin<InvWithLinqSettings>
         _stashItems = new TimeCache<List<CustomItemData>>(GetStashItems, 200);
     }
 
+    private void InvalidateItemCaches()
+    {
+        // Force recreation of all cached items to clear ItemData internal caches
+        _inventItems.ForceUpdate();
+        _stashItems.ForceUpdate();
+    }
+
     public override bool Initialise()
     {
         Settings.ReloadFilters.OnPressed = LoadRules;
@@ -210,6 +217,26 @@ public class InvWithLinq : BaseSettingsPlugin<InvWithLinqSettings>
 			if (leftPanel != null && leftItems.Count > 0)
 			{
 				var filtered = ApplyFilters(leftItems).ToList();
+				
+				if (Settings.EnableDebugLogging && filtered.Count > 0)
+				{
+					foreach (var item in filtered)
+					{
+						var itemName = item.Name ?? item.BaseName ?? "(unknown)";
+						var hasHonour = item.ItemStats?[ExileCore2.Shared.Enums.GameStat.SanctumHonourResistancePct] ?? 0;
+						var hasKey = item.ItemStats?[ExileCore2.Shared.Enums.GameStat.MapSanctumKeyDropChancePct] ?? 0;
+						
+						// Dump ALL ItemStats to see what's actually in the dictionary
+						var allStats = item.ItemStats != null 
+							? string.Join(", ", item.ItemStats.Where(kvp => kvp.Value != 0).Select(kvp => $"{kvp.Key}={kvp.Value}"))
+							: "(no stats)";
+						
+						LogMessage($"[RelicLocker.Render] Highlighting: {itemName}", 2);
+						LogMessage($"  Queried: HonourRes={hasHonour}, KeyDrop={hasKey}", 2);
+						LogMessage($"  ALL ItemStats: {allStats}", 2);
+					}
+				}
+
 				if (filtered.Count > 0)
 				{
 					foreach (var item in filtered)
@@ -1129,6 +1156,12 @@ public class InvWithLinq : BaseSettingsPlugin<InvWithLinqSettings>
                     // Preprocess and compile with extra constraints support
                     var text = File.ReadAllText(fullPath);
                     FilterPreProcessing.TryExtractOpenCounts(text, out var cleaned, out var minPref, out var minSuff, out var maxPref, out var maxSuff);
+                    
+                    if (Settings.EnableDebugLogging)
+                        LogMessage($"[LoadRules] Rule {newRules.Count - 1} ({rule.Name}): MinPref={minPref}, MinSuff={minSuff}, MaxPref={maxPref}, MaxSuff={maxSuff}", 3);
+                    if (Settings.EnableDebugLogging)
+                        LogMessage($"[LoadRules] Cleaned filter text: {cleaned.Substring(0, Math.Min(200, cleaned.Length))}...", 4);
+
                     var filter = ItemFilter.LoadFromString(cleaned);
                     compiled.Add(new CompiledRule
                     {
@@ -1168,6 +1201,13 @@ public class InvWithLinq : BaseSettingsPlugin<InvWithLinqSettings>
             _itemFilters = compiled.Select(c => c.Filter).ToList();
             _compiledRules = compiled;
             Settings.InvRules = newRules;
+            
+            // Invalidate item caches to force recreation with fresh ItemData instances
+            // This clears internal ItemStats caching that can cause stale filter results
+            InvalidateItemCaches();
+            
+            if (Settings.EnableDebugLogging)
+                LogMessage($"[LoadRules] Loaded {_compiledRules.Count} rules total, item caches invalidated", 2);
         }
         catch (Exception e)
         {
