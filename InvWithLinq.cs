@@ -4,7 +4,6 @@ using System.Diagnostics;
 using System.Drawing;
 using System.IO;
 using System.Linq;
-using System.Text.RegularExpressions;
 using ExileCore2;
 using ExileCore2.PoEMemory;
 using ExileCore2.PoEMemory.Components;
@@ -24,7 +23,6 @@ public class InvWithLinq : BaseSettingsPlugin<InvWithLinqSettings>
 {
     private readonly TimeCache<List<CustomItemData>> _inventItems;
     private readonly TimeCache<List<CustomItemData>> _stashItems;
-    private List<ItemFilter>? _itemFilters;
     private List<CompiledRule>? _compiledRules;
     private readonly List<string> ItemDebug = [];
 
@@ -32,10 +30,6 @@ public class InvWithLinq : BaseSettingsPlugin<InvWithLinqSettings>
     {
         public required ItemFilter Filter { get; init; }
         public required InvRule RuleMeta { get; init; }
-        public int? MinOpenPrefixes { get; init; }
-        public int? MinOpenSuffixes { get; init; }
-        public int? MaxOpenPrefixes { get; init; }
-        public int? MaxOpenSuffixes { get; init; }
     }
 
     public InvWithLinq()
@@ -59,33 +53,6 @@ public class InvWithLinq : BaseSettingsPlugin<InvWithLinqSettings>
         Settings.OpenDumpFolder.OnPressed = OpenDumpFolder;
         LoadRules();
         return true;
-    }
-
-    private bool ExtraOpenAffixConstraintsPass(ItemData item, CompiledRule rule)
-    {
-        if (rule.MinOpenPrefixes is null && rule.MinOpenSuffixes is null && rule.MaxOpenPrefixes is null && rule.MaxOpenSuffixes is null)
-            return true;
-        var ok = true;
-        if (rule.MinOpenPrefixes is int pReq)
-        {
-            ok &= ItemFilterUtils.OpenPrefixCount(item) >= pReq;
-            if (!ok) return false;
-        }
-        if (rule.MaxOpenPrefixes is int pMax)
-        {
-            ok &= ItemFilterUtils.OpenPrefixCount(item) <= pMax;
-            if (!ok) return false;
-        }
-        if (rule.MinOpenSuffixes is int sReq)
-        {
-            ok &= ItemFilterUtils.OpenSuffixCount(item) >= sReq;
-            if (!ok) return false;
-        }
-        if (rule.MaxOpenSuffixes is int sMax)
-        {
-            ok &= ItemFilterUtils.OpenSuffixCount(item) <= sMax;
-        }
-        return ok;
     }
 
     private void DumpItems()
@@ -970,7 +937,7 @@ public class InvWithLinq : BaseSettingsPlugin<InvWithLinqSettings>
 
     private IEnumerable<(CustomItemData Item, InvRule Rule)> GetMatchingItems(IEnumerable<CustomItemData> source)
     {
-        if ((_compiledRules == null || _compiledRules.Count == 0) && (_itemFilters == null || _itemFilters.Count == 0) || Settings?.InvRules == null)
+        if (_compiledRules == null || _compiledRules.Count == 0 || Settings?.InvRules == null)
             yield break;
 
         foreach (var item in source)
@@ -984,7 +951,7 @@ public class InvWithLinq : BaseSettingsPlugin<InvWithLinqSettings>
     {
         matchingRule = null;
 
-        if (item == null || (_compiledRules == null || _compiledRules.Count == 0) && (_itemFilters == null || _itemFilters.Count == 0) || Settings?.InvRules == null)
+        if (item == null || _compiledRules == null || _compiledRules.Count == 0 || Settings?.InvRules == null)
             return false;
 
         try
@@ -997,28 +964,15 @@ public class InvWithLinq : BaseSettingsPlugin<InvWithLinqSettings>
             return false;
         }
 
-        var rules = Settings.InvRules;
-        for (int i = 0; i < rules.Count; i++)
+        foreach (var compiledRule in _compiledRules)
         {
-            var rule = rules[i];
+            var rule = compiledRule.RuleMeta;
             if (!rule.Enabled)
                 continue;
 
             try
             {
-                if (_compiledRules != null && i < _compiledRules.Count && _compiledRules[i] != null)
-                {
-                    var compiledRule = _compiledRules[i];
-                    if (!ExtraOpenAffixConstraintsPass(item, compiledRule))
-                        continue;
-
-                    if (compiledRule.Filter.Matches(item))
-                    {
-                        matchingRule = rule;
-                        return true;
-                    }
-                }
-                else if (_itemFilters != null && i < _itemFilters.Count && _itemFilters[i].Matches(item))
+                if (compiledRule.Filter.Matches(item))
                 {
                     matchingRule = rule;
                     return true;
@@ -1094,16 +1048,10 @@ public class InvWithLinq : BaseSettingsPlugin<InvWithLinqSettings>
         {
             try
             {
-                // Apply the same preprocessing as real rules so Open* tokens are supported
                 var expr = Settings.FilterTest.Value;
-                var _ = FilterPreProcessing.TryExtractOpenCounts(expr, out var cleaned, out var minPref, out var minSuff, out var maxPref, out var maxSuff);
-                var filter = ItemFilter.LoadFromString(cleaned);
+                var filter = ItemFilter.LoadFromString(expr);
                 var itemCtx = new ItemData(hoveredItem.Entity, GameController);
-                var openOk = (minPref is null || ItemFilterUtils.OpenPrefixCount(itemCtx) >= minPref)
-                             && (minSuff is null || ItemFilterUtils.OpenSuffixCount(itemCtx) >= minSuff)
-                             && (maxPref is null || ItemFilterUtils.OpenPrefixCount(itemCtx) <= maxPref)
-                             && (maxSuff is null || ItemFilterUtils.OpenSuffixCount(itemCtx) <= maxSuff);
-                var matched = openOk && filter.Matches(itemCtx);
+                var matched = filter.Matches(itemCtx);
                 DebugWindow.LogMsg($"{Name}: [Filter Test] Hovered Item: {matched}", 5);
             }
             catch (Exception ex)
@@ -1149,24 +1097,11 @@ public class InvWithLinq : BaseSettingsPlugin<InvWithLinqSettings>
                     newRules.Add(rule);
                     discovered.Remove(rule.Location);
 
-                    // Preprocess and compile with extra constraints support
-                    var text = File.ReadAllText(fullPath);
-                    FilterPreProcessing.TryExtractOpenCounts(text, out var cleaned, out var minPref, out var minSuff, out var maxPref, out var maxSuff);
-                    
-                    if (Settings.EnableDebugLogging)
-                        LogMessage($"[LoadRules] Rule {newRules.Count - 1} ({rule.Name}): MinPref={minPref}, MinSuff={minSuff}, MaxPref={maxPref}, MaxSuff={maxSuff}", 3);
-                    if (Settings.EnableDebugLogging)
-                        LogMessage($"[LoadRules] Cleaned filter text: {cleaned.Substring(0, Math.Min(200, cleaned.Length))}...", 4);
-
-                    var filter = ItemFilter.LoadFromString(cleaned);
+                    var filter = ItemFilter.LoadFromPath(fullPath);
                     compiled.Add(new CompiledRule
                     {
                         Filter = filter,
                         RuleMeta = rule,
-                        MinOpenPrefixes = minPref,
-                        MinOpenSuffixes = minSuff,
-                        MaxOpenPrefixes = maxPref,
-                        MaxOpenSuffixes = maxSuff,
                     });
                 }
                 else
@@ -1179,22 +1114,15 @@ public class InvWithLinq : BaseSettingsPlugin<InvWithLinqSettings>
             foreach (var r in discovered.Values.OrderBy(r => r.Name, StringComparer.OrdinalIgnoreCase))
             {
                 var fullPath = Path.Combine(configDirectory, r.Location);
-                var text = File.Exists(fullPath) ? File.ReadAllText(fullPath) : string.Empty;
-                FilterPreProcessing.TryExtractOpenCounts(text, out var cleaned, out var minPref, out var minSuff, out var maxPref, out var maxSuff);
-                var filter = ItemFilter.LoadFromString(cleaned);
+                var filter = ItemFilter.LoadFromPath(fullPath);
                 newRules.Add(r);
                 compiled.Add(new CompiledRule
                 {
                     Filter = filter,
                     RuleMeta = r,
-                    MinOpenPrefixes = minPref,
-                    MinOpenSuffixes = minSuff,
-                    MaxOpenPrefixes = maxPref,
-                    MaxOpenSuffixes = maxSuff,
                 });
             }
 
-            _itemFilters = compiled.Select(c => c.Filter).ToList();
             _compiledRules = compiled;
             Settings.InvRules = newRules;
             

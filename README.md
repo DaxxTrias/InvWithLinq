@@ -35,22 +35,18 @@ Note on “tiers”: If your build does not expose explicit tier helpers, approx
 
 ### 2) Core helpers and conventions
 
-#### 2.1 SumItemStats (sum resistances/values without arrays)
+#### 2.1 Stat sums and grouped thresholds
 
-Call it with arguments, not an array literal:
+Use direct arithmetic when you need a total:
 
 ```csharp
-SumItemStats(
-  ItemStats[GameStat.BaseFireDamageResistancePct],
-  ItemStats[GameStat.BaseColdDamageResistancePct],
-  ItemStats[GameStat.BaseLightningDamageResistancePct],
-  ItemStats[GameStat.BaseChaosDamageResistancePct]
-) >= 45
+ItemStats[GameStat.BaseFireDamageResistancePct]
+  + ItemStats[GameStat.BaseColdDamageResistancePct]
+  + ItemStats[GameStat.BaseLightningDamageResistancePct]
+  + ItemStats[GameStat.BaseChaosDamageResistancePct] >= 45
 ```
 
-Notes:
-- Do not use `.Value` on `ItemStats[...]`; pass them directly.
-- If your environment does not expose `SumItemStats`, approximate with N-of-M thresholds:
+Use upstream Dynamic LINQ arrays for N-of-M thresholds:
 
 ```csharp
 new [] {
@@ -60,16 +56,18 @@ new [] {
 }.Count(x => x) >= 2
 ```
 
-#### 2.2 Open affix slots (if exposed in your build)
+Do not use `.Value` on `ItemStats[...]`; pass them directly.
 
-Some builds expose open slot counts:
+#### 2.2 Open affix slots
+
+Open affix data is provided by ItemFilterV2 through `ModsInfo`:
 
 ```csharp
 // Require at least one open suffix (craftable) and one open prefix
-HasTag("Ring") && OpenSuffixCount() >= 1 && OpenPrefixCount() >= 1
+HasTag("Ring") && ModsInfo.HasOpenSuffix && ModsInfo.OpenPrefixCount >= 1
 ```
 
-If these symbols are not available in your environment, this feature is not supported and the rule will fail to compile. In that case, approximate by requiring only the affixes you care about and review items manually for open slots.
+Equivalent boolean helpers are available as `ModsInfo.HasOpenPrefix` and `ModsInfo.HasOpenSuffix`.
 
 #### 2.3 Sockets and Item Quality
 
