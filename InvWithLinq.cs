@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Drawing;
@@ -187,10 +187,10 @@ public class InvWithLinq : BaseSettingsPlugin<InvWithLinqSettings>
             var invItems = GetFilteredInvItems().ToList();
             var invBounds = GetInventoryBounds();
             if (invBounds.Width <= 1 || invBounds.Height <= 1)
-                invBounds = BuildUnionRect(invItems);
-            foreach (var item in invItems)
+                invBounds = BuildUnionRect(invItems.Select(match => match.Item));
+            foreach (var (item, rule) in invItems)
             {
-                var frameColor = GetFilterColor(item);
+                var frameColor = rule.Color;
                 var itemRect = item.ClientRectangleCache;
                 var drawRect = IntersectRect(itemRect, invBounds);
                 if (drawRect.Width <= 1 || drawRect.Height <= 1)
@@ -220,7 +220,7 @@ public class InvWithLinq : BaseSettingsPlugin<InvWithLinqSettings>
 				
 				if (Settings.EnableDebugLogging && filtered.Count > 0)
 				{
-					foreach (var item in filtered)
+					foreach (var (item, _) in filtered)
 					{
 						var itemName = item.Name ?? item.BaseName ?? "(unknown)";
 						var hasHonour = item.ItemStats?[ExileCore2.Shared.Enums.GameStat.SanctumHonourResistancePct] ?? 0;
@@ -239,9 +239,9 @@ public class InvWithLinq : BaseSettingsPlugin<InvWithLinqSettings>
 
 				if (filtered.Count > 0)
 				{
-					foreach (var item in filtered)
+					foreach (var (item, rule) in filtered)
 					{
-						var frameColor = GetFilterColor(item);
+						var frameColor = rule.Color;
 						var drawRect = item.ClientRectangleCache;
 						if (drawRect.Width <= 1 || drawRect.Height <= 1)
 							continue;
@@ -261,10 +261,10 @@ public class InvWithLinq : BaseSettingsPlugin<InvWithLinqSettings>
         var stashItems = GetFilteredStashItems().ToList();
         var stashBounds = GetStashBounds();
         if (stashBounds.Width <= 1 || stashBounds.Height <= 1)
-            stashBounds = BuildUnionRect(stashItems);
-        foreach (var stashItem in stashItems)
+            stashBounds = BuildUnionRect(stashItems.Select(match => match.Item));
+        foreach (var (stashItem, rule) in stashItems)
         {
-            var frameColor = GetFilterColor(stashItem);
+            var frameColor = rule.Color;
             var itemRect = stashItem.ClientRectangleCache;
             var drawRect = IntersectRect(itemRect, stashBounds);
             if (drawRect.Width <= 1 || drawRect.Height <= 1)
@@ -941,53 +941,9 @@ public class InvWithLinq : BaseSettingsPlugin<InvWithLinqSettings>
         return GameController?.IngameState?.IngameUi?.InventoryPanel?.IsVisible == true;
     }
     
-    private IEnumerable<CustomItemData> GetFilteredInvItems()
+    private IEnumerable<(CustomItemData Item, InvRule Rule)> GetFilteredInvItems()
     {
-        if ((_compiledRules == null || _compiledRules.Count == 0) && (_itemFilters == null || _itemFilters.Count == 0) || Settings?.InvRules == null)
-            return Array.Empty<CustomItemData>();
-        var items = _inventItems.Value;
-        var rules = Settings.InvRules;
-        return items.Where(item =>
-        {
-            try
-            {
-                for (int i = 0; i < rules.Count; i++)
-                {
-                    if (!rules[i].Enabled)
-                        continue;
-
-                    try
-                    {
-                        // Prefer compiled rules with extra constraints when available
-                        if (_compiledRules != null && i < _compiledRules.Count && _compiledRules[i] != null)
-                        {
-                            var cr = _compiledRules[i];
-                            if (!ExtraOpenAffixConstraintsPass(item, cr))
-                                continue;
-                            if (cr.Filter.Matches(item))
-                                return true;
-                        }
-                        else if (_itemFilters != null && i < _itemFilters.Count)
-                        {
-                            if (_itemFilters[i].Matches(item))
-                                return true;
-                        }
-                    }
-                    catch
-                    {
-                        // Silently skip items that cause filter evaluation errors
-                        // This catches exceptions from ItemFilterLibrary even if validation missed something
-                        // The item will simply not be highlighted rather than crashing the plugin
-                        continue;
-                    }
-                }
-                return false;
-            }
-            catch
-            {
-                return false;
-            }
-        });
+        return GetMatchingItems(_inventItems.Value);
     }
 
     internal void ReloadRules()
@@ -995,101 +951,80 @@ public class InvWithLinq : BaseSettingsPlugin<InvWithLinqSettings>
         LoadRules();
     }
 
-    private IEnumerable<CustomItemData> GetFilteredStashItems()
+    private IEnumerable<(CustomItemData Item, InvRule Rule)> GetFilteredStashItems()
     {
-        if ((_compiledRules == null || _compiledRules.Count == 0) && (_itemFilters == null || _itemFilters.Count == 0) || Settings?.InvRules == null)
-            return Array.Empty<CustomItemData>();
-        var items = _stashItems.Value;
-        var rules = Settings.InvRules;
-        return items.Where(item =>
-        {
-            try
-            {
-                for (int i = 0; i < rules.Count; i++)
-                {
-                    if (!rules[i].Enabled)
-                        continue;
-
-                    try
-                    {
-                        if (_compiledRules != null && i < _compiledRules.Count && _compiledRules[i] != null)
-                        {
-                            var cr = _compiledRules[i];
-                            if (!ExtraOpenAffixConstraintsPass(item, cr))
-                                continue;
-                            if (cr.Filter.Matches(item))
-                                return true;
-                        }
-                        else if (_itemFilters != null && i < _itemFilters.Count)
-                        {
-                            if (_itemFilters[i].Matches(item))
-                                return true;
-                        }
-                    }
-                    catch
-                    {
-                        // Silently skip items that cause filter evaluation errors
-                        // This catches exceptions from ItemFilterLibrary even if validation missed something
-                        // The item will simply not be highlighted rather than crashing the plugin
-                        continue;
-                    }
-                }
-                return false;
-            }
-            catch
-            {
-                return false;
-            }
-        });
+        return GetMatchingItems(_stashItems.Value);
     }
 
-    private IEnumerable<CustomItemData> ApplyFilters(IEnumerable<CustomItemData> source)
+    private IEnumerable<(CustomItemData Item, InvRule Rule)> ApplyFilters(IEnumerable<CustomItemData> source)
+    {
+        return GetMatchingItems(source);
+    }
+
+    private IEnumerable<(CustomItemData Item, InvRule Rule)> GetMatchingItems(IEnumerable<CustomItemData> source)
     {
         if ((_compiledRules == null || _compiledRules.Count == 0) && (_itemFilters == null || _itemFilters.Count == 0) || Settings?.InvRules == null)
-            return Array.Empty<CustomItemData>();
-        var rules = Settings.InvRules;
-        return source.Where(item =>
+            yield break;
+
+        foreach (var item in source)
         {
+            if (TryGetMatchingRule(item, out var rule) && rule != null)
+                yield return (item, rule);
+        }
+    }
+
+    private bool TryGetMatchingRule(CustomItemData? item, out InvRule? matchingRule)
+    {
+        matchingRule = null;
+
+        if (item == null || (_compiledRules == null || _compiledRules.Count == 0) && (_itemFilters == null || _itemFilters.Count == 0) || Settings?.InvRules == null)
+            return false;
+
+        try
+        {
+            if (item.Entity?.IsValid != true)
+                return false;
+        }
+        catch
+        {
+            return false;
+        }
+
+        var rules = Settings.InvRules;
+        for (int i = 0; i < rules.Count; i++)
+        {
+            var rule = rules[i];
+            if (!rule.Enabled)
+                continue;
+
             try
             {
-                // Skip items with invalid entities early
-                if (item == null || item.Entity?.IsValid != true)
-                    return false;
-
-                for (int i = 0; i < rules.Count; i++)
+                if (_compiledRules != null && i < _compiledRules.Count && _compiledRules[i] != null)
                 {
-                    if (!rules[i].Enabled)
+                    var compiledRule = _compiledRules[i];
+                    if (!ExtraOpenAffixConstraintsPass(item, compiledRule))
                         continue;
 
-                    try
+                    if (compiledRule.Filter.Matches(item))
                     {
-                        if (_compiledRules != null && i < _compiledRules.Count && _compiledRules[i] != null)
-                        {
-                            var cr = _compiledRules[i];
-                            if (!ExtraOpenAffixConstraintsPass(item!, cr))
-                                continue;
-                            if (cr.Filter.Matches(item))
-                                return true;
-                        }
-                        else if (_itemFilters != null && i < _itemFilters.Count)
-                        {
-                            if (_itemFilters[i].Matches(item))
-                                return true;
-                        }
-                    }
-                    catch
-                    {
-                        // Silently skip items that cause filter evaluation errors
-                        continue;
+                        matchingRule = rule;
+                        return true;
                     }
                 }
-                return false;
+                else if (_itemFilters != null && i < _itemFilters.Count && _itemFilters[i].Matches(item))
+                {
+                    matchingRule = rule;
+                    return true;
+                }
             }
             catch
             {
-                return false;
+                // Skip rules/items that throw during filter evaluation rather than crashing render.
+                continue;
             }
-        });
+        }
+
+        return false;
     }
 
     private void PerformItemFilterTest(Element? hoveredItem)
@@ -1213,21 +1148,6 @@ public class InvWithLinq : BaseSettingsPlugin<InvWithLinqSettings>
         {
             DebugWindow.LogError($"{Name}: Filter Load Error.\n{e}", 15);
         }
-    }
-
-    private ColorNode GetFilterColor(CustomItemData item)
-    {
-        if (_itemFilters == null || Settings?.InvRules == null)
-            return Settings?.DefaultFrameColor ?? new ColorNode(Color.White);
-
-        for (int i = 0; i < _itemFilters.Count && i < Settings.InvRules.Count; i++)
-        {
-            if (Settings.InvRules[i].Enabled && _itemFilters[i].Matches(item))
-            {
-                return Settings.InvRules[i].Color;
-            }
-        }
-        return Settings.DefaultFrameColor;
     }
 
     private RectangleF GetInventoryBounds()
