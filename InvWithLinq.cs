@@ -258,7 +258,7 @@ public class InvWithLinq : BaseSettingsPlugin<InvWithLinqSettings>
         if (!IsStashVisible() || !Settings.EnableForStash)
             goto AfterStash;
 
-        var stashItems = GetFilteredStashItems().ToList();
+        var stashItems = GetFilteredStashItems(GetCurrentStashSourceKeys()).ToList();
         var stashBounds = GetStashBounds();
         if (stashBounds.Width <= 1 || stashBounds.Height <= 1)
             stashBounds = BuildUnionRect(stashItems.Select(match => match.Item));
@@ -317,38 +317,15 @@ public class InvWithLinq : BaseSettingsPlugin<InvWithLinqSettings>
             return items;
         }
 
-        // Aggregate items from the primary visible stash
-        if (visibleStash != null)
+        foreach (var inventory in EnumerateVisibleStashInventories(visibleStash))
         {
-            AddItemsFromInventory(visibleStash, items);
-
-            // If this tab is a nested container (folder), also traverse its visible nested inventories
-            if (TryGetBoolFromProperty(visibleStash, "IsNestedInventory"))
-            {
-                var nestedInventories = TryGetInventoriesFromProperties(visibleStash, "NestedVisibleInventory");
-                if (nestedInventories == null)
-                {
-                    var nestedContainer = TryGetPropertyValue(visibleStash, "NestedStashContainer");
-                    if (nestedContainer != null)
-                    {
-                        nestedInventories = TryGetInventoriesFromProperties(nestedContainer, "NestedVisibleInventory", "VisibleInventories", "Inventories");
-                    }
-                }
-                if (nestedInventories != null)
-                {
-                    foreach (var nested in nestedInventories)
-                    {
-                        if (nested != null)
-                            AddItemsFromInventory(nested, items);
-                    }
-                }
-            }
+            AddItemsFromInventory(inventory, items, ItemSourceKind.Stash, GetInventorySourceKey(inventory));
         }
 
         return items;
     }
 
-    private void AddItemsFromInventory(Inventory inventory, List<CustomItemData> items)
+    private void AddItemsFromInventory(Inventory inventory, List<CustomItemData> items, ItemSourceKind sourceKind = ItemSourceKind.Unknown, long sourceKey = 0)
     {
         var stashItems = TryGetRef(() => inventory?.VisibleInventoryItems as System.Collections.Generic.IList<ExileCore2.PoEMemory.Elements.InventoryElements.NormalInventoryItem>);
         if (stashItems == null)
@@ -366,11 +343,41 @@ public class InvWithLinq : BaseSettingsPlugin<InvWithLinqSettings>
                 continue;
 
             var rect = slotItem.GetClientRectCache;
-            var safeItem = TryGetRef(() => new CustomItemData(itemEntity, GameController, rect));
+            var safeItem = TryGetRef(() => new CustomItemData(itemEntity, GameController, rect, sourceKind, sourceKey));
             if (safeItem != null)
             {
                 items.Add(safeItem);
             }
+        }
+    }
+
+    private IEnumerable<Inventory> EnumerateVisibleStashInventories(Inventory? visibleStash)
+    {
+        if (visibleStash == null)
+            yield break;
+
+        yield return visibleStash;
+
+        if (!TryGetBoolFromProperty(visibleStash, "IsNestedInventory"))
+            yield break;
+
+        var nestedInventories = TryGetInventoriesFromProperties(visibleStash, "NestedVisibleInventory");
+        if (nestedInventories == null)
+        {
+            var nestedContainer = TryGetPropertyValue(visibleStash, "NestedStashContainer");
+            if (nestedContainer != null)
+            {
+                nestedInventories = TryGetInventoriesFromProperties(nestedContainer, "NestedVisibleInventory", "VisibleInventories", "Inventories");
+            }
+        }
+
+        if (nestedInventories == null)
+            yield break;
+
+        foreach (var nested in nestedInventories)
+        {
+            if (nested != null)
+                yield return nested;
         }
     }
 
@@ -951,9 +958,9 @@ public class InvWithLinq : BaseSettingsPlugin<InvWithLinqSettings>
         LoadRules();
     }
 
-    private IEnumerable<(CustomItemData Item, InvRule Rule)> GetFilteredStashItems()
+    private IEnumerable<(CustomItemData Item, InvRule Rule)> GetFilteredStashItems(IReadOnlySet<long> currentStashSourceKeys)
     {
-        return GetMatchingItems(_stashItems.Value);
+        return GetMatchingItems(_stashItems.Value.Where(item => IsCurrentStashItem(item, currentStashSourceKeys)));
     }
 
     private IEnumerable<(CustomItemData Item, InvRule Rule)> ApplyFilters(IEnumerable<CustomItemData> source)
@@ -1025,6 +1032,60 @@ public class InvWithLinq : BaseSettingsPlugin<InvWithLinqSettings>
         }
 
         return false;
+    }
+
+    private IReadOnlySet<long> GetCurrentStashSourceKeys()
+    {
+        var keys = new HashSet<long>();
+        try
+        {
+            var ingameUi = GameController?.Game?.IngameState?.IngameUi;
+            if (ingameUi == null)
+                return keys;
+
+            var visibleStash = default(Inventory);
+            if (ingameUi.StashElement?.IsVisible == true)
+            {
+                visibleStash = ingameUi.StashElement.VisibleStash;
+            }
+            else if (ingameUi.GuildStashElement?.IsVisible == true)
+            {
+                visibleStash = ingameUi.GuildStashElement.VisibleStash;
+            }
+
+            foreach (var inventory in EnumerateVisibleStashInventories(visibleStash))
+            {
+                var key = GetInventorySourceKey(inventory);
+                if (key != 0)
+                    keys.Add(key);
+            }
+        }
+        catch
+        {
+            keys.Clear();
+        }
+
+        return keys;
+    }
+
+    private static bool IsCurrentStashItem(CustomItemData item, IReadOnlySet<long> currentStashSourceKeys)
+    {
+        if (item.SourceKind != ItemSourceKind.Stash)
+            return false;
+
+        return item.SourceKey != 0 && currentStashSourceKeys.Contains(item.SourceKey);
+    }
+
+    private static long GetInventorySourceKey(Inventory inventory)
+    {
+        try
+        {
+            return inventory?.Address ?? 0;
+        }
+        catch
+        {
+            return 0;
+        }
     }
 
     private void PerformItemFilterTest(Element? hoveredItem)
